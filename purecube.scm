@@ -894,50 +894,6 @@
           ([== b `(,o ,x ,a)])
 )))
 
-(cond-expand (disabled
-(def (terms in out t)
- (fresh (x)
-   (term in out x)
-   (lassoc x t)
-   ))
-(verify pushdown (run* (q) (pushdown 1 '* 2 q)) ===> (* 1 2))
-;(run* (q) (pushdown 1 '(* 2) q))
-(verify pushdown (run* (q) (pushdown 1 '* '(* 2 3) q)) ===> (* (* 1 2) 3))
-(verify pushdown (run* (q) (pushdown 1 '* q '(* (* 1 2) 3))) ===> (* 2 3))
-(verify pushdown (run* (q) (pushdown q '* '(* 2 3) '(* (* 1 2) 3))) ===> 1)
-;
-(verify pushdown (run* (q) (pushdown 1 '* '(* (* 2 3) 4) q)) ===> (* (* (* 1 2) 3) 4))
-(verify pushdown (run* (q) (pushdown 1 '* q '(* (* (* 1 2) 3) 4))) ===> (* (* 2 3) 4))
-(verify pushdown (run* (q) (pushdown q '* '(* (* 2 3) 4) '(* (* (* 1 2) 3) 4))) ===> 1)
-;
-(verify pushdown (run* (q) (pushdown 1 '* '(* (* (* 2 3) 4) 5) q)) ===> (* (* (* (* 1 2) 3) 4) 5))
-;(run* (q) (pushdown 1 '(* 2 (* 3 4)) q))
-; should have quadratic complexity
-(def (push-down x o a b)
-  (fresh (y z l oo)   
-   (condu ([all (== b `(,oo ,l ,z))
-                (== a `(,oo ,y ,z))
-                (push-down x o y l)])
-          ([== b `(,o ,x ,a)])
-)))
-(verify push-down (run* (q) (push-down 1 '* 2 q)) ===> (* 1 2))
-(verify push-down (run* (q) (push-down 1 '* '(/ 2 3) q)) ===> (/ (* 1 2) 3))
-(verify push-down (run* (q) (push-down 1 '* '(+ (/ 2 3) 4) q)) ===> (+ (/ (* 1 2) 3) 4))
-;
-(def (sameop o y)
- (fresh (x z)
-   (== y `(,o ,x . ,z))))
-;
-(dcg term-op
- ([_] <=> '*)
- ([_] <=> '/))
-;
-(verify term-op (run* (q) (term-op '(/) '() q)) ===> /)
-(verify term-op (run* (q) (term-op '(*) '() q)) ===> *)
-(verify term-op (run* (q) (term-op q '() '*)) ===> (*))
-(verify term-op (run* (q) (term-op '(+) '() q)) =>)
-)(else))
-
 (def (sameops ops y)
  (fresh (x z o)
    (take-from ops o)
