@@ -805,22 +805,6 @@
    (dcg head condo: condu . args))
 ))
 
-(cond-expand (disabled
-(def (lassoc in out)
-  (fresh (a b c o)
-   (condu ([all (== in `(,o)) (== out in)])
-          ([all (== in `(,o ,a)) (== out in)])
-          ([all (== in `(,o ,a ,b)) (== out in)])
-	  ([all (== in `(,o ,a ,b . ,c)) (lassoc `(,o (,o ,a ,b) . ,c) out)])
-)))
-(verify lassoc (run* (q) (lassoc '(*) q)) ===> (*))
-(verify lassoc (run* (q) (lassoc '(* 1) q)) ===> (* 1))
-(verify lassoc (run* (q) (lassoc '(* 1 2) q)) ===> (* 1 2))
-(verify lassoc (run* (q) (lassoc '(* 1 2 3) q)) ===> (* (* 1 2) 3))
-(verify lassoc (run* (q) (lassoc '(* 1 2 3 4) q)) ===> (* (* (* 1 2) 3) 4))
-(verify lassoc (run* (q) (lassoc q '(* (* 1 2) 3))) ===> (* (* 1 2) 3))
-)(else))
-
 ; has to be PEG because of multi-result behavior
 ; Here we change left-recursion to right-recursion for the expression grammar
 ; associativity is a problem for ^ operator
@@ -890,38 +874,7 @@
 (verify reve (run* (q) (reve '(1 2 3) q '(0))) ===> (3 2 1 0))
 ;(verify reve (run* (q) (reve q '(1 2 3) '(4))) ===> (3 2 1 4))
 
-; append a b = rev(append (rev b) (rev a))
-(def (appendº a b c)
-  (fresh (a1 b1 c1)
-   (reve b1 b '())
-   (reve a1 a '())
-   (appendo b1 a1 c1)
-   (reve c1 c '())
-   ))
 
-(cond-expand (disabled
-(verify appendº (run* (q) (appendº '(1 2) '(3) q)) ===> (1 2 3))
-(verify appendº (run* (q) (appendº q '(3) '(1 2 3))) ===> (1 2))
-(verify appendº (run* (q) (appendº '(1 2) q '(1 2 3))) ===> (3))
-(verify appendº (length (run* (q) (fresh (x y) (appendº x y '(1 2 3)) (== q `(result: ,x ,y))))) = 4)
-(verify appendº (run* (q) (fresh (x y) (appendº '(1 2) x y) (== q `(result: ,x ,y)))) ===> (result: _.0 (1 2 . _.0)))
-;(verify appendo (run* (q) (fresh (x y) (appendo x '(3) y) (== q `(result: ,x ,y)))) ===> (result: () (3)))
-)(else))
-
-(cond-expand (disabled
-(def (appende in el out)
- (fresh (x xs ys)
-  (condu ([== in '()] (== out `(,el)))
-         ([== in `(,x . ,xs)] (== out `(,x . ,ys))
-			      (appende xs el ys))
-	 )))
-(verify appende (run* (q) (appende '(1 2) 3 q)) ===> (1 2 3))
-(verify appende (run* (q) (appende q 3 '(1 2 3))) ===> (1 2))
-(verify appende (run* (q) (appende '(1 2) q '(1 2 3))) ===> 3)
-(verify appende (run* (q) (fresh (x y) (appende x y '(1 2 3)) (== q `(result: ,x ,y)))) ===> (result: (1 2) 3))
-(verify appende (run* (q) (fresh (x y) (appende '(1 2) x y) (== q `(result: ,x ,y)))) ===> (result: _.0 (1 2 _.0)))
-(verify appende (run* (q) (fresh (x y) (appende x 3 y) (== q `(result: ,x ,y)))) ===> (result: () (3)))
-)(else))
 
 ;old stuff
 (dcg term' ;locals: (x y)  
@@ -1137,113 +1090,12 @@
 (verify BC (run 17 (q) (BC q '())) ---> (< c >) (< b >) (< c c >) (< d >) (< c b >) (< b c >) (< c c c >) (< d c >) (< c d >) (< b b >) (< c c b >) (< d b >) (< c b c >) (< b c c >) (< c c c c >) (< d c c >) (< c d c >))
 ;(< c >) (< c c >) (< b >) (< b c >) (< d >) (< c c c >) (< d c >) (< c b >) (< b c c >) (< c b c >) (< d c c >) (< c d >) (< b b >) (< c c c c >) (< d b >) (< c d c >) (< b b c >)
 
-(def (Y fun . args)
-   ((λ (x) (let ([r (x x)])   ;initial thunk
-       (if [null? args]
-	   r
-           (apply r args))))   ; ω
-    (λ (g) (λ (Lin Lout . data)  ; varargs
-      ;(fresh (foo)
-	 ;(appendo foo Lout Lin)
-	 (apply fun (g g) Lin Lout data)
-      ;)
-      ))
-    ))
-
-(def (found l tab n)
-   (let ([r #f])
-;      (project (l)
-	 (set! r (assq l (list-ref tab n)))
-;	 )
-      r))
-(def (Found l tab n)
-   (let ([r #f])
-      (project (l)
-	 (set! r (assq l (list-ref tab n)))
-	 )
-      r))
-
-(def (YY step . args)
- (let ([tab (list '() '())])
-  ((λ (x)                   ; ω combinator
-    (let ([r (x x)])        ; thunk
-     (if [null? args]
-	 r                  ; if no args
-	 (apply r args))    ; args given
-     ))   
-   (λ (g) (λ (Lin Lout . data) ; self => varargs
-     (cond ([Found Lin tab 0]
-	    => [uncurry (λ (_ Lout' . data')
-			(pp 'bar)
-			(all
-			   (== Lout Lout')
-			   (== data data')))])
-	   ([Found Lout tab 1]
-	    => [uncurry (λ (_ Lin' . data')
-			(pp 'baz)
-			(all
-			   (== Lin Lin')
-			   (== data data')))])
-      (else (let ([_ (apply step (g g) Lin Lout data)])
-       (project (Lin)
-	  (list-set! tab 0 `((,Lin ,Lout . ,data) . ,(list-ref tab 0)))
-	  )
-       (project (Lout)
-	  (list-set! tab 1 `((,Lout ,Lin . ,data) . ,(list-ref tab 1)))
-	  )
-       _)))
-     ))
-   )))
-
-; hash-consing
-(def-syntax [memo ctor]
-   (let ([ctor' ctor] [memo '(() ())] [enabled #true])
-      (fn-with ([uncurry (λ (in out . args)
-		  (cond
-		     ([found in memo 0] => (uncurry (λ (_ o . a); v)
-					   ;(pp 'in)
-					   (all ;(== in i)
-					        (== out o)
-					        (== args a))
-					   )))
-		     ([found out memo 1] => (uncurry (λ (_ i . a); v)
-					   ;(pp (eq? o out))
-					   ;(pp 'out)
-					   (all (== in i)
-					        ;(== out o)
-					        (== args a))
-					   )))
-		     (else (all (apply ctor' in out args)
-			      (begin
-				 ;(pp 'Zap!)
-				 ;(write in)
-				 (when enabled
-;				    (project (in)
-				       (list-set! memo 0 (:: (:: in (:: out args))
-							     (list-ref memo 0)))
-;				       )
-;				    (project (out)
-				       (list-set! memo 1 (:: (:: out (:: in args))
-							     (list-ref memo 1)))
-;				       )
-				       )
-				 #s)
-			      ))
-		     ))])
-       || table: x => (list-ref memo x)
-       || count: x => (length (list-ref memo x))
-       || reset: x => (list-set! memo x '())
-       || disable: => (set! enabled #false)
-       || enable: => (set! enabled #true)
-       || ctor: => ctor'
-      )))
-
 (dcg test
  ([test] <=> do[(begin (write 'zap!)) #s]
       'x)
 )
-(def mtest [memo test])
-;(def mtest test)
+
+(def mtest test)
 
 (let-syntax ([mtest mtest])
 (dcg foo
@@ -1252,9 +1104,6 @@
  ([foo] <=> [mtest] 'and [mtest] 'and [mtest])
 ))
 
-;(mtest count: 1)
-(mtest reset: 0)
-(mtest reset: 1)
 (begin (define eff.1 (with-output-to-string (fn =>
    (verify foo.1 (run* (q) (foo '(x) '())) ===> _.0))))
    ;(verify foo-eff.1 (length (string-split eff.1 "!")) = 1)
@@ -1262,7 +1111,6 @@
    )
 
 ;(run* (q) (foo '(x and x) '()))
-;(mtest reset: 1)
 ;(run* (q) (foo '(x and x and x) '()))
 (begin (define eff.2 (with-output-to-string (fn =>
    (verify foo.2 (run* (q) (foo '(x and x and x) '())) ===> _.0))))
@@ -1271,7 +1119,6 @@
    )
 
 ;(pp (test count:))
-(mtest disable:)
 (begin (define eff.r (with-output-to-string (fn =>
    (verify foo.r (run 4 (q) (foo q '())) ---> (x) (x and x) (x and x and x)))))
    ;(verify foo-eff.r (length (string-split eff.r "!")) = 3)
@@ -1311,7 +1158,6 @@
  ([X 'z] <=> ε)
  ([_ `(S ,x)] <=> [SS x] 'a 'a)
 )
-;(def X [memo SS])
 (def X SS)
 
 (verify SS.zero (run* (q) (X '() '() q)) ===> z)
@@ -1439,7 +1285,7 @@
 (dcg
 (Factor ;locals: (x y)
  ([_ `(^ ,x ,y)] <=> [Factor x] '^ [literal y])
- ;([_ `(begin ,x)] <=> `(,[Expr x]))
+ ([_ `(begin ,x)] <=> `(,[Expr x]))
  ([_ x] <=> [literal x])
 )
 (Term ;locals: (x y)
@@ -1807,8 +1653,9 @@ else a - (b - c)
 (verify Q (run* (q) (Q q '() '(Q3 x))) ===> ((g (x) h)))
 (verify Q (run 10 (q) (fresh (x y) (Q x '() y) (== q y))) ---> x (Q1 x) (Q2 x) (Q1 (Q1 x)) (Q3 x) (Q1 (Q2 x)) (Q2 (Q1 x)) (Q1 (Q1 (Q1 x))) (Q3 (Q1 x)) (Q1 (Q3 x)))
 
-; XXX S -> x S x | x should not work for PEGs (according to Wikipedia)
-; maybe a hint that our formalism is not strictly PEG (i.e., linear time),
+; S -> x S x | x should not work for Packrat (according to Wikipedia). Still,
+; it is context free.
+; maybe a hint that our parser is not strictly packrat (i.e., linear time),
 ; but more general type-1 (i.e., exponential) e.g., CYK,
 ; or even type-0 (turing-complete). Most likely, type-0 since its equivalent
 ; to attribute grammars
