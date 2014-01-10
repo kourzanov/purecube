@@ -1494,7 +1494,7 @@ else a - (b - c)
 ;((x) x) ((x + x) (+ x x)) ((x * x) (* x x)) ((42) 42) ((42 + x) (+ 42 x)) ((x - x) (- x x)) ((x ^ x) (^ x x)) ((x + x * x) (+ x (* x x))) ((x / x) (/ x x)) ((42 - x) (- 42 x))
 )
 
-(cond-expand (disable
+(cond-expand (disabled
 (parameterize ([*digits* '(42)] [*letters* '(#\x)])
 (run 40 (q) (fresh (x y) (hutton' x  '()  y) (== q `(,x ,y))))
 ))(else 'takes-too-long))
