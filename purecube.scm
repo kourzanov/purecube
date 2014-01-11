@@ -1633,7 +1633,7 @@ else a - (b - c)
 (verify s.enum (run 3 (q) (fresh (x y) (s x '() y) (== q x))) ---> (x) (x x x) (x x x x x))
 
 ; higher-order rules
-(defn [comma p] (dcg => c
+(defn [comma p] (dcg <=> c
  (c ([_ `(,x . ,y)] <=>
 		    [c y]
 		    ;[(comma p) y] ;using def and this would lead to immediate runaway recursion
