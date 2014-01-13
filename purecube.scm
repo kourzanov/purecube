@@ -218,7 +218,7 @@
   [seq
    (syntax-rules (qq quote unquote quasiquote unquote-splicing
 		  do ε when unless skip ? + * / : lift unlift)
-      ; rev: ref: reb:)
+                  ;rev: ref: reb: reu:)
       ; [[in]] is the input list
       ; [[out]] is the output list
       ; [[c]] is the non-determinism engine (conde, condu)
@@ -229,7 +229,7 @@
       ; the rest is the list of constituents to parse
       ;
       ; avoid introducing unnecessary temporary by handling last rules separately (short-circuit in-out)
-      ([_ in out _ acc temps heads do(actions ...)]     (revs (make-fresh temps begin) (actions ... . acc)))
+      ([_ in out _ acc temps heads do(actions ...)]     (revs (make-fresh temps all) (actions ... . acc)))
       ; delegate this both to ^^^
       ([_ in out c acc temps heads ε]             (seq in out c acc temps heads do[(== in out)]))
       ; XXX TODO remove this? (its not reversible)
@@ -256,8 +256,8 @@
 	  do[(c ((seq in out c () () [heads (ac ... . acc)] goals ...))
 		((== in out)))]
        ))
-      ([_ in out c acc temps heads (alt / . alts)]
-        (seq in out c acc temps heads do[(proc-/ in out c (c) heads alt / . alts)]
+      ([_ in out c acc temps [heads (ac ...)] (alt / . alts)]
+        (seq in out c acc temps heads do[(proc-/ in out c (c) [heads (ac ... . acc)] alt / . alts)]
        ))
       ;; [[*]] combinator that collects functor arguments for all [[goals]] into
       ;; lists as it iterates on the input
@@ -420,7 +420,16 @@
       ;; TODO: delegate processing for all sub-patterns, just like for [[+]] and [[*]]
       ; collect all actions and rules in the [[acc]]
       ([_ in out c acc temps heads do(actions ...) . rest] (seq in out c (actions ... . acc) temps heads . rest))
-      ([_ in out c acc temps heads ε . rest]         (seq in out c ([== in out] . acc) temps heads . rest))
+      ;; THIS IS WRONG
+      ;([_ in out c acc temps heads ε . rest]         (seq in out c ([== in out] . acc) temps heads . rest))
+      ;; TODO: THIS IS BETTER, BUT CAN BE IMPROVED (i.e., elided)
+      ([_ in out c acc temps heads ε . rest]
+       (let ([temp #false]) ; just to generate a new temporary
+	  (seq temp out c ([== in temp]
+			 . acc)
+	     (temp . temps) heads . rest)
+       )
+       )
       ; TODO remove this? (its not reversible)
       ([_ in out c acc temps heads (skip n) . rest]
        (let ([temp #false]) ; just to generate a new temporary
@@ -472,9 +481,9 @@
 	     (temp . temps) [heads (ac ...)] . rest)
        )
       )
-      ([_ in out c acc temps heads (alt / . alts) . rest]
+      ([_ in out c acc temps [heads (ac ...)] (alt / . alts) . rest]
        (let ([temp #false]) ; just to generate a new temporary
-	  (seq temp out c ([proc-/ in temp c (c) heads alt / . alts]
+	  (seq temp out c ([proc-/ in temp c (c) [heads (ac ... . acc)] alt / . alts]
 			 . acc)
 	     (temp . temps) heads . rest)
        )
@@ -653,10 +662,14 @@
   (letrec-syntax
    ; DONE add special syntax for the head to auto-propagate matched input to the output
    ; DONE auto-extract locals: infer them from the head vars
-   ([p (syntax-rules ... (<=> <= => _ proj)
+    ([p (syntax-rules ... (<=> <= => _ proj |.|)
 	 ([p k acc] (revs (k) acc))
-	 ; assume the user wants to get matched lists as a single packaged result
+	 ; this is going to be a recognizer, not a parser
 	 ([p k acc ([] <=> . goals) . rest]
+	  (p k ([(seq Lin Lout k () () [heads acc] . goals)] . acc) . rest)
+	 )
+	 ; assume the user wants to get matched lists as a single packaged result
+	 ([p k acc ([|.|] <=> . goals) . rest]
 	  (p k ([(fresh (results)
 		    (appendo results Lout Lin)
 		    (== result `(,results))
@@ -701,8 +714,17 @@
 	  (p k ([(all [== result `(,args ...)]
 		      (seq Lin Lout k () () [heads acc] . goals))] . acc) . rest)
 	 )
-	 ; assume the user wants to get matched lists as a single packaged result
+	 ;; actions included
+	 ; this is going to be a recognizer, not a parser	 
 	 ([p k acc ([] <=[actions ...]=> . goals) . rest]
+	  (p k ([(all (project (Lin) (if [ground? Lin] #s (begin actions ...)))
+		      (seq Lin Lout k () () [heads acc] . goals)
+		      (project (Lin) (if [ground? Lin] (begin actions ...) #s))
+		      )]
+		. acc)
+	     . rest))
+	 ; assume the user wants to get matched lists as a single packaged result
+	 ([p k acc ([|.|] <=[actions ...]=> . goals) . rest]
 	  (p k ([(fresh (results)
 		      (appendo results Lout Lin)
 		      (== result `(,results))
@@ -763,7 +785,6 @@
 		      )]
 		. acc)
 	     . rest))
-
 	 )])
    (condo [(apply extend 'head Lin Lout result)]
      (else
@@ -873,8 +894,6 @@
 (verify reve (run* (q) (reve q '(1 2 3) '())) ===> (3 2 1))
 (verify reve (run* (q) (reve '(1 2 3) q '(0))) ===> (3 2 1 0))
 ;(verify reve (run* (q) (reve q '(1 2 3) '(4))) ===> (3 2 1 4))
-
-
 
 ;old stuff
 (dcg term' ;locals: (x y)  
@@ -991,9 +1010,9 @@
 (verify S (run 3 (q) (S q '() 'x)) ---> (a a a a) (a a) ()) 
 
 (dcg A'
- ([A'] <=> ε)
+ ([] <=> ε)
  ;([A'] <=> 'a 'a)
- ([A'] <=> 'a [A'] 'a)
+ ([] <=> 'a [A'] 'a)
 )
 (verify A' (run* (q) (A' '() '())) ===> _.0)
 (verify A' (run* (q) (A' '(a a) '())) ===> _.0)
@@ -1003,7 +1022,7 @@
 ; context-free grammar aⁿbⁿ
 ; more on this later
 (dcg A
- ([A] <=> 'a ([A] ?) 'b)
+ ([] <=> 'a ([A] ?) 'b)
 )
 (verify A.fwd (run* (q) (A '() '())) =>)
 (verify A.fwd (run* (q) (A '(a a) '())) =>)
@@ -1017,7 +1036,7 @@
 )(else))
 
 (dcg B
- ([A] <=> '< ('b *) '>)
+ ([] <=> '< ('b *) '>)
 )
 (verify B (run* (q) (B '(< >) '())) ===> _.0)
 (verify B (run* (q) (B '(< b >) '())) ===> _.0)
@@ -1026,7 +1045,7 @@
 (verify B (run 4 (q) (B q '())) ---> (< >) (< b >) (< b b >) (< b b b >))
 
 (dcg BC0
- ([BC0] <=> (('c / 'b / 'd) +))
+ ([] <=> (('c / 'b / 'd) +))
 )
 (verify BC0 (run* (q) (BC0 '(< >) '())) =>)
 (verify BC0 (run* (q) (BC0 '(d c a) '())) =>)
@@ -1036,7 +1055,7 @@
 (verify BC0 (run 17 (q) (BC0 q '())) ---> (c) (b) (c c) (d) (c b) (b c) (c c c) (d c) (c d) (b b) (c c b) (d b) (c b c) (b c c) (c c c c) (d c c) (c d c))
 
 (dcg BC
- ([A] <=> '< (('c / 'b / 'd) +) '>)
+ ([] <=> '< (('c / 'b / 'd) +) '>)
 )
 (verify BC (run* (q) (BC '(< >) '())) =>)
 (verify BC (run* (q) (BC '(a) '())) =>)
@@ -1047,7 +1066,7 @@
 ;(< c >) (< c c >) (< b >) (< b c >) (< d >) (< c c c >) (< d c >) (< c b >) (< b c c >) (< c b c >) (< d c c >) (< c d >) (< b b >) (< c c c c >) (< d b >) (< c d c >) (< b b c >)
 
 (dcg test
- ([test] <=> do[(begin (write 'zap!)) #s]
+ ([] <=> do[(begin (write 'zap!) #s)]
       'x)
 )
 
@@ -1055,9 +1074,9 @@
 
 (let-syntax ([mtest mtest])
 (dcg foo
- ([foo] <=> [mtest])
- ([foo] <=> [mtest] 'and [mtest])
- ([foo] <=> [mtest] 'and [mtest] 'and [mtest])
+ ([] <=> [mtest])
+ ([] <=> [mtest] 'and [mtest])
+ ([] <=> [mtest] 'and [mtest] 'and [mtest])
 ))
 
 (begin (define eff.1 (with-output-to-string (fn =>
@@ -1081,15 +1100,13 @@
    ;(newline)
    )
 
-;(pp (test count:))(test reset:)
-;(exit)
-
 ; left-factoring
 ;(dcg baz ([_] <=> epsilon) ([_] <=> 'and [test]))
 ;(dcg quux ([_] <=> epsilon) ([_] <=> ('and [test] [baz])))
 ;(dcg bar'([_] <=> [test] [quux]))
+
 (dcg bar
- ([bar] <=> [test] ((: 'and [test] ((: 'and [test]) / ε)) / ε))
+ ([] <=> [test] ((: 'and [test] ((: 'and [test]) / ε)) / ε))
 )
 (begin (define eff.3 (with-output-to-string (fn =>
        (verify bar (run* (q) (bar '(x) '())) ===> _.0))))
@@ -1172,7 +1189,7 @@
 ; Hutton's razor with exponents
 ; left-factoring, complete, but not reversible since the bottom is never reached
 ; can not use full inference here because of inherited "attributes", e.g., [[x]]
-(defn exprs (dcg <=: expr
+(defn exprs (dcg <=> expr
 (factor locals: (x)
  ;([_ `(,x . ,z)] <=> [literal x] [factor' '() z])
  ([_ y] <=> ;do[(trace-vars 'exprs (x y))] ; can not trace Lin/Lout because of hygiene
@@ -1688,20 +1705,21 @@ else a - (b - c)
 (verify anbn.2.rev (run* (q) (anbn q '() '(S (S x))))--->(a b) (a a b b))
 ;(verify anbn.enum (run 2 (q) (fresh (x y) (anbn x '() y) (== q x)))--->(a b) (a a b b))
 
-(dcg aa ([] <=> 'a))
-(dcg bb ([] <=> 'a 'b))
+(dcg aa ([|.|] <=> 'a))
+(dcg bb ([|.|] <=> 'a 'b))
 
 (run* (q) (aa '(a) '() q))
 (run* (q) (aa '(b) '() q))
 (run* (q) (bb '(a b) '() q))
 (run* (q) (bb '(b a) '() q))
 
-; a grammar from Mercury paper, we know left-recursion won't hurt
-(defn merc (dcg <=: a
- (a ([_ `(a ,x)] <=> ([b x] / [c x])))
+; a grammar from Mercury paper, we know left-recursion won't hurt,
+; so for [[a]] and [[d]] we inhibit collapse to FAIL by prepending a matcher with ε
+(defn merc (dcg <=> a
+ (a ([_ `(a ,x)] <=> ε ([b x] / [c x])))
  (b ([_ `(b ,x)] <=> 'x [d x] 'y))
  (c ([_ `(c ,x)] <=> 'x [d x] 'z))
- (d ([_ `(d ,x)] <=> ([a x] / ε)))
+ (d ([_ `(d ,x)] <=> ε ([a x] / ε)))
  ))
 
 (verify merc (run* (q) (merc '(x x x z z z) '() q)) ---> (a (c (d (a (c (d (a (c (d _.0))))))))))
@@ -1754,22 +1772,29 @@ else a - (b - c)
 (verify aⁿbⁿcⁿ (run 3 (q) (aⁿbⁿcⁿ q '())) ---> (a b c . _.0) (a a b b c c . _.0) (a a a b b b c c c . _.0))
 )(else))
 
-(def Λ (dcg <=: S
+;; A better way to inhibit collapse to FAIL
+(def Λ (dcg <=> S
+  ;(L ([_ (proj (lambda (x) y)) `(lambda (,x) ,y)] <=> 'λ [T x] '· [S y]))
   (L ([_ `(lambda (,x) ,y)] <=> 'λ [T x] '· [S y]))
-  ;(A ([_ `(,x ,y)] <=> ([S y] +)))
-  ;(A ([_ `(,x . ,y)] <=> `(,[S x] ,([S y] *) !)))
-  (A ([_ x] <=> `(! ,([S x] +)))
+  (S ([_ x] <=> ε ([L x] / [A x] / [T x])))
+  (A ([_ `(,x)] <=> '! [S x])
+     ([_ `(,x ,y)] <=> '! [S x] [S y])
+     ([_ `(,x ,y)] <=> `(! ,[S x] ,[S y])))
+  (A´´ ([_ `(,x . ,y)] <=> `(,[S x] ,[S y])))
+  (A' ([_ x] <=> `(! ,([S x] +)))
      ([_ x] <=> '! ([S x] +)))
   (T ([_ x] <=> [symbol x]))
-  (S ([_ x] <=> ([L x] / [A x] / [T x])))
   ))
 
 (verify Λ (run* (q) (Λ '() '() q)) =>)
 (verify Λ (run* (q) (Λ '(x) '() q)) ===> x)
+(verify Λ (run* (q) (Λ q '() 'x)) ===> (x))
 (verify Λ (run* (q) (Λ '(! x) '() q)) ===> (x))
+(verify Λ (run* (q) (Λ q '() '(x))) ===> (! x))
 (verify Λ (run* (q) (Λ '(! x y) '() q)) ===> (x y))
-(verify Λ (run* (q) (Λ '(! x y z) '() q)) ===> (x y z))
-(verify Λ (run* (q) (Λ '(! x y z w) '() q)) ===> (x y z w))
+(verify Λ (run 1 (q) (Λ q '() '(x y))) ===> (! x y))
+;(verify Λ (run* (q) (Λ '(! x y z) '() q)) ===> (x y z))
+;(verify Λ (run* (q) (Λ '(! x y z w) '() q)) ===> (x y z w))
 (verify Λ (run* (q) (Λ '(! (! x y) z ) '() q)) ===> ((x y) z))
 (verify Λ (run* (q) (Λ '(λ|x|· y) '() q)) ===> (lambda (x) y))
 (verify Λ (run* (q) (Λ '(λ|x|· ! x y) '() q)) ===> (lambda (x) (x y)))
