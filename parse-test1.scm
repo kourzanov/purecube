@@ -123,7 +123,7 @@
    (take-from ops o)
    (== y `(,o ,x . ,z))))
 
-; <= prefents runaway left-recursion, [[defn]] prevents self-recursion circumventing <= mechanism
+; <= prevents runaway left-recursion, [[defn]] prevents self-recursion circumventing <= mechanism
 (defn term (pcg <= term
 (term locals: (x y z l o)
  ; test left-recursion prevention (by <= and defn)
