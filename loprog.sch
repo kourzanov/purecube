@@ -1,12 +1,12 @@
 ; beginning
 (module loprog
    (import ascript synrules)
-   (export take-from nullᵒ?  pairᵒ? carᵒ cdrᵒ consᵒ !))
+   (export take-from nullᵒ?  pairᵒ? carᵒ cdrᵒ consᵒ ! subsetᵒ !2 !ᵒ2 insertᵒ memberᵒ))
 ;(load "synrules.sch")
 ; some syntactic sugar
 (set-sharp-read-syntax! 's succeed)
 (set-sharp-read-syntax! 'u fail)
-(define-syntax ≡ ==)
+(def-syntax ≡ ==)
 
 (define-syntax-rule [except pred args ...]
    (project (args ...)
@@ -16,7 +16,7 @@
 
 (define-syntax-rule [trace-vars name (id* ...)]
    (lambda (s)
-       (pp (list name (reify id* s) ...))
+       (pp (list name ((reify id*) s) ...))
        (succeed s)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

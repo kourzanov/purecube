@@ -1,42 +1,20 @@
-#! /usr/bin/env bgl
-; the beginning
-(cond-expand (bigloo-eval
-(module parse-test1
-   (library srfi1 slib minikanren)
-   (import ;brackets
-	   (synrules "synrules.sch")
-	   (helpers "helpers.scm")
-	   (ascript "cases.scm")
+(module Parse-test
+   (library bkanren slib)
+   (import (helpers "helpers.scm")
 	   (loprog "loprog.sch")
-	   (purecube "purecube.scm"))
-   (eval (export-exports)))
-)(else
-(module parse-test1
-   (library srfi1 slib minikanren)
-   (main main)
-   )
-(load "synrules.sch")
-(load "dodger.sch")
-(load "cases.scm")
-(load "cond-expand.sch")
-(load "forall.scm")
-(load "helpers.scm")
-(load "brace-syntax.sch")
-(load "bracket-syntax.sch")
-(load "loprog.sch")
-(load "purecube.scm")
-))
+	   (Parse "Parse.scm")
+   ))
 
-;(exit)
-(def (append⁰ a b c)
-   (conde
-    ([== a '()] (== b c))
-    ;([== b '()] (== a c))
-    (else (fresh (x a1 c1)
-	   (== a `(,x . ,a1))
-	   (== c `(,x . ,c1))
-	   (append⁰ a1 b c1)))
-    ))
+; (def-syntax λ lambda)
+; (def-syntax + $+)
+; (def-syntax - $-)
+; (def-syntax * $*)
+; (def-syntax / $/)
+
+; (def-syntax conde tconde)
+; (def-syntax == t==)
+; (def-syntax run trun)
+; (def-syntax run* trun*)
 
 (pcg aa ([|.|] <=> 'a))
 (pcg bb ([|.|] <=> 'a 'b))
@@ -45,11 +23,11 @@
 (def [basic-tests]
 (verify number (run* (q) (fresh (X) (number '(2 a 3) X q))) ===> 2)
 (verify number (run* (q) (fresh (X) (number '(22 a 3) X q))) ===> 22)
-(verify number (run 3 (q) (fresh (X Y) (number `(,X a 3) Y q))) ===> 0 1 2)
+;(verify number (run 3 (q) (fresh (X Y) (number `(,X a 3) Y q))) ===> 0 1 2)
 
 (verify symbol (run* (q) (fresh (X) (symbol '(a 3) X q)))   ===> a)
 (verify symbol (run* (q) (fresh (X) (symbol '(abc 3) X q)))   ===> abc)
-(verify symbol (run 3 (q) (fresh (X Y) (symbol `(,X 3) Y q)))   ===> a b c)
+;(verify symbol (run 3 (q) (fresh (X Y) (symbol `(,X 3) Y q)))   ===> a b c)
 
 (verify literal (run* (q) (fresh (X) (literal '(2 ^ 3) X q))) ===> 2) 
 (verify literal (run* (q) (fresh (X) (literal q X 4)))        ===> (4 . _.0))
@@ -74,10 +52,10 @@
 ; appendo can handle non-ground [[x]] and [[y]]!
 (verify appendo (run 2 (q) (fresh (x y) (appendo x '(3) y) (== q `(,x ,y)))) ---> (() (3)) ((_.0) (_.0 3)))
 
-(run* (q) (aa '(a) '() q))
-(run* (q) (aa '(b) '() q))
-(run* (q) (bb '(a b) '() q))
-(run* (q) (bb '(b a) '() q))
+(verify aa1 (run* (q) (aa '(a) '() q)) ===> (a))
+(verify aa2 (run* (q) (aa '(b) '() q)) =>)
+(verify bb1 (run* (q) (bb '(a b) '() q)) ===> (a b))
+(verify bb2 (run* (q) (bb '(b a) '() q)) =>)
 )
 
 ; has to be PEG because of multi-result behavior
@@ -100,54 +78,6 @@
  ([_ x] <=> (literal x))
 )))
 
-;old stuff
-(pcg term' ;locals: (x y)  
- ([_ `(* ,x . ,y)] <=> (factor x) '* (term' `(* . ,y))) ; optimize associative Scheme's * - no fixing needed
- ([_ `(* ,x ,y)] <=> (factor x) '* (term' y))           ; do[trace-vars 'term (x y)])
- ([_ `(/ ,x . ,y)] <=> (factor x) '/ (term' `(/ . ,y))) ; rely on correct variadic /
- ([_ `(/ ,x ,y)] <=> (factor x) '/ (term' y))
- ([_ x] <=> (factor x))
- )
-
-; should have quadratic complexity
-(def (pushdown x o a b)
-  (fresh (y z l)   
-   (condu ([all (== b `(,o ,l ,z))
-                (== a `(,o ,y ,z))
-                (pushdown x o y l)])
-          ([== b `(,o ,x ,a)])
-)))
-
-(def (sameops ops y)
- (fresh (x z o)
-   (take-from ops o)
-   (== y `(,o ,x . ,z))))
-
-; <= prevents runaway left-recursion, [[defn]] prevents self-recursion circumventing <= mechanism
-(defn term (pcg <= term
-(term locals: (x y z l o)
- ; test left-recursion prevention (by <= and defn)
- ([term `(* ,l . ,z)] <=> (term `(* ,y . ,z)) '* (factor x))
- ;
- ([term `(* ,l . ,z)] <=[(pushdown x '* y l)]=> (factor x) '* (term `(* ,y . ,z)))
- ([term `(* ,x ,y)]   <=[(! sameops '(*) y)]=> (factor x) '* (term y))
- ([term `(/ ,l . ,z)] <=[(pushdown x '/ y l)]=> (factor x) '/ (term `(/ ,y . ,z)))
- ([term `(/ ,x ,y)]   <=[(! sameops '(/) y)]=> (factor x) '/ (term y))
- ;([_ `(,o ,l . ,z)] <=[(push-down x o y l)]=> (factor x) (term-op o) (term `(,o ,y . ,z)))
- ; ;([_ `(,o ,x ,y)] <=[(! sameops '(* /) y)]=> (factor x) (term-op o) (term y))
- ;([_ `(,o ,x ,y)] <=> (factor x) (term-op o) (term y))
- ([term x] <=> (factor x))
- )))
-
-; has to be PEG because of multi-result behavior
-(pcg expr condo: condu;locals: (x y)
- ([_ `(+ ,x . ,y)] <=> (term x) '+ (expr `(+ . ,y)))  ; optimize associative Scheme's +
- ([_ `(+ ,x ,y)] <=> (term x) '+ (expr y))
- ([_ `(- ,x . ,y)] <=> (term x) '- (expr `(- . ,y)))  ; rely on correct variadic -
- ([_ `(- ,x ,y)] <=> (term x) '- (expr y))
- ([_ x] <=> (term x))
-) 
-
 (def [expr1-tests]
 (verify factor (run* (q) (fresh (X) (factor '(2 a 3) X q))) ===> 2)
 ;
@@ -163,57 +93,9 @@
 (verify factor (run* (q) (fresh (X) (factor '(a ^ 1 ^ 3 ^ 5 ^ 7) X q)))  ===> (^ a (* 1 3 5 7)))
 (verify factor (run* (q) (fresh (X) (factor '(p 3) X q))) ===> p)
 (verify factor (run 0 (q) (fresh (x y) (factor x  '() y) (== q `(,x ,y)))) --->)
-(verify factor (run 0 (q) (fresh (x y z) (factor x  y z) (== q `(,x ,y ,z)))) --->)
-
-(verify term (run* (q) (fresh (x) (term '(1 * 3) '() q))) ===> (* 1 3))
-(verify term (run* (q) (fresh (x) (term '(1 * 3 * 5) '() q))) ===> (* (* 1 3) 5))
-(verify term (run* (q) (fresh (x) (term '(1 * 3 * 5 * 7) '() q))) ===> (* (* (* 1 3) 5) 7)) 
-(verify term (run* (q) (fresh (x) (term '(1 * 3 * 5 * 7 * 9) '() q))) ===> (* (* (* (* 1 3) 5) 7) 9))
-
-(verify term (run* (q) (fresh (x) (term '(1 * 3 ^ 5) '() q))) ===> (* 1 (^ 3 5)))
-(verify term (run* (q) (fresh (x) (term '(1 ^ 3 * 5) '() q))) ===> (* (^ 1 3) 5))
-
-(verify term (run* (q) (fresh (x) (term q '() '(* (* 1 3) 5)))) ===> (1 * 3 * 5))
-(verify term (run* (q) (fresh (x) (term q '() '(* (* (* 1 3) 5) 7)))) ===> (1 * 3 * 5 * 7))
-(verify term (run* (q) (fresh (x) (term q '() '(* 1 3 5)))) =>) ; should fail
-(verify term (run* (q) (fresh (x) (term q '() '(* 1 (* 3 5))))) =>) ; should fail
-(verify term (run* (q) (fresh (x) (term q '() '(* 1 (* 3 (* 5 7)))))) =>) ; should fail
-;(exit)
-
-(verify term (run* (q) (fresh (x) (term '(1 / 3 / 5) '() q))) ===> (/ (/ 1 3) 5))
-(verify term (run* (q) (fresh (x) (term '(1 / 3 / 5 / 7) '() q))) ===> (/ (/ (/ 1 3) 5) 7))
-(verify term (run* (q) (fresh (x) (term '(1 / 3 / 5 / 7 / 9) '() q))) ===> (/ (/ (/ (/ 1 3) 5) 7) 9))
-
-(verify term (run* (q) (fresh (x) (term q '() '(/ 1 3 5)))) =>) ; should fail
-(verify term (run* (q) (fresh (x) (term q '() '(/ 1 (/ 3 5))))) =>) ; should fail
-(verify term (run* (q) (fresh (x) (term q '() '(/ 1 (/ 3 (/ 5 7)))))) =>) ; should fail
-(verify term (run* (q) (fresh (x) (term q '() '(/ (/ 1 3) 5)))) ===> (1 / 3 / 5))
-(verify term (run* (q) (fresh (x) (term q '() '(/ (/ (/ 1 3) 5) 7)))) ===> (1 / 3 / 5 / 7))
-
-;(verify term-todo1 (run* (q) (fresh (x) (term '(1 * 3 / 5) '() q))) ===> (/ (* 1 3) 5))
-;(verify term-todo1 (run* (q) (fresh (x) (term q '() '(* 1 (/ 3 5))))) =>) ; should fail
-;(verify term-todo1 (run* (q) (fresh (x) (term q '() '(/ (* 1 3) 5)))) ===> (1 * 3 / 5))
-
-;(verify term-todo2 (run* (q) (fresh (x) (term '(1 / 3 * 5) '() q))) ===> (* (/ 1 3) 5))
-;(verify term-todo2 (run* (q) (fresh (x) (term q '() '(/ 1 (* 3 5))))) =>) ; should fail
-;(verify term-todo2 (run* (q) (fresh (x) (term q '() '(* (/ 1 3) 5)))) ===> (1 / 3 * 5))
-;
-(verify term (run* (q) (fresh (x) (term q '() '2))) ===> (2))
-(verify term (run 0 (q) (fresh (x y) (term x '() y) (== q `(,x ,y)))) --->)
-;(exit)
-	  
-(verify expr (run* (q) (fresh (x) (expr '(1 + 3) '() q))) ===> (+ 1 3))
-(verify expr (run* (q) (fresh (x) (expr '(1 + 3 + 5) '() q))) ===> (+ 1 3 5))
-(verify expr (run* (q) (fresh (x) (expr '(1 * 3 + 5) '() q))) ===> (+ (* 1 3) 5))
-(verify expr (run* (q) (fresh (x) (expr '(1 + 3 * 5) '() q))) ===> (+ 1 (* 3 5)))
-(verify expr (run* (q) (fresh (x) (expr '(1 * 3 * 5) '() q))) ===> (* (* 1 3) 5))
-(verify expr (run* (q) (fresh (x) (expr '(1 * 2 + 3 * 5) '() q))) ===> (+ (* 1 2) (* 3 5)))
-(verify expr (run* (q) (fresh (x) (expr '(2 ^ 2 * 1 + 3 * 5) '() q))) ===> (+ (* (^ 2 2) 1) (* 3 5)))
-
-(verify expr (run* (q) (fresh (x) (expr q '() '(+ 1 3)))) ===> (1 + 3))
-(verify expr (run* (q) (fresh (x) (expr q '() '(+ (* 2 1) (* 3 5))))) ===> (2 * 1 + 3 * 5))
-(verify expr (run* (q) (fresh (x) (expr q '() '(+ (* 2 a) (* x 5))))) ===> (2 * a + x * 5))
+(verify factor-x (run 0 (q) (fresh (x y z) (factor x  y z) (== q `(,x ,y ,z)))) --->)
 )
+
 
 ; some syntactic sugar
 
@@ -270,9 +152,9 @@
 
 ; for some strange reason this doesn't work in Bigloo compiler (resulting binary diverges)
 ; for versions before 4.1a (22Jan14)
-(cond-expand (bigloo;-eval
+;(cond-expand (bigloo;-eval
 (verify A.bwd (run 3 (q) (A q '())) ---> (a a b b) (a b) (a a a b b b))
-)(else))
+;)(else))
 
 (verify B (run* (q) (B '(< >) '())) ===> _.0)
 (verify B (run* (q) (B '(< b >) '())) ===> _.0)
@@ -285,213 +167,15 @@
 (verify BC0 (run* (q) (BC0 '(c) '())) ===> _.0)
 (verify BC0 (run* (q) (BC0 '(c b) '())) ===> _.0)
 (verify BC0 (run* (q) (BC0 '(d c c) '())) ===> _.0)
-(verify BC0 (run 17 (q) (BC0 q '())) ---> (c) (b) (c c) (d) (c b) (b c) (c c c) (d c) (c d) (b b) (c c b) (d b) (c b c) (b c c) (c c c c) (d c c) (c d c))
+(verify BC0 (run 17 (q) (BC0 q '())) ---> (c) (b) (d) (c c) (c b) (c d) (b c) (d c) (c c c) (b b) (d b) (c c b) (b d) (d d) (c c d) (c b c) (c d c))
+
 
 (verify BC (run* (q) (BC '(< >) '())) =>)
 (verify BC (run* (q) (BC '(a) '())) =>)
 (verify BC (run* (q) (BC '(< c >) '())) ===> _.0)
 (verify BC (run* (q) (BC '(< c b >) '())) ===> _.0)
 (verify BC (run* (q) (BC '(< d c c >) '())) ===> _.0)
-(verify BC (run 17 (q) (BC q '())) ---> (< c >) (< b >) (< c c >) (< d >) (< c b >) (< b c >) (< c c c >) (< d c >) (< c d >) (< b b >) (< c c b >) (< d b >) (< c b c >) (< b c c >) (< c c c c >) (< d c c >) (< c d c >))
-;(< c >) (< c c >) (< b >) (< b c >) (< d >) (< c c c >) (< d c >) (< c b >) (< b c c >) (< c b c >) (< d c c >) (< c d >) (< b b >) (< c c c c >) (< d b >) (< c d c >) (< b b c >)
-)
-
-(def (Y fun . args)
-   ((λ (x) (let ([r (x x)])   ;initial thunk
-       (if [null? args]
-	   r
-           (apply r args))))   ; ω
-    (λ (g) (λ (Lin Lout . data)  ; varargs
-      ;(fresh (foo)
-	 ;(appendo foo Lout Lin)
-	 (apply fun (g g) Lin Lout data)
-      ;)
-      ))
-    ))
-
-(def (found l tab n)
-   (let ([r #false])
-      (project (l)
-	 (begin (printf "memotable: ~a~n" [list-ref tab n]);(and [ground? l]
-	 (set! r (assq l [list-ref tab n]))
-	 ;)
-	 #s))
-      r))
-
-; hash-consing
-(def-syntax [memo ctor]
-   (let ([ctor' ctor]
-	 [memo '(() ())]
-	 [enabled #true])
-    ;(lambda vars
-      ;(conde (#u)
-      ;((apply
-      (fn-with ([uncurry (λ (in out . args)
-	;(printf "trying ~a ~a~nmemo0:~a~nmemo1:~a~n" in out [list-ref memo 0] [list-ref memo 1])
-	(condu
-	   ((project (in)
-	       (or [and (ground? in) (cond ((assoc in [list-ref memo 0]) =>
-		      (uncurry (λ (_ o . a)
-				  (pp 'in)
-				  (all 
-				     (== out o)
-				     (== args a))
-				  ))))]
-		   #u)))
-	   ((project (out)
-	       (or [and (ground? out) (cond ((assoc out [list-ref memo 1]) =>
-		      (uncurry (λ (_ i . a)
-				  (pp 'out)
-				  (all
-				     (== in i)
-				     (== args a))
-				  ))))]
-		   #u)))
-	   (else (all (apply ctor' in out args)
-		    (project (in out args)
-		       (if [and enabled
-                            (ground? in)]; (ground? out) (ground? args)]
-			   (begin ;(printf "saved-in ~a ~a ~a ~n" in out args)
-				  (list-set! memo 0
-				     (:: (:: in (:: out args))
-					 (list-ref memo 0)))
-				  #s)
-			   #s))
-		    (project (out in args)
-		       (if [and enabled
-                            (ground? out)]; (ground? in) (ground? args)]
-			   (begin ;(printf "saved-out ~a ~a ~a ~n" out in args)
-				  (list-set! memo 1
-				     (:: (:: out (:: in args))
-					 (list-ref memo 1)))
-				  #s)
-			   #s))
-		    ))
-	   ))])
-       || table: x => (list-ref memo x)
-       || count: x => (length (list-ref memo x))
-       || reset: x => (list-set! memo x '())
-       || disable: => (set! enabled #false)
-       || enable: => (set! enabled #true)
-       || ctor: => ctor'
-      ;) vars)))
-)))
-
-(def (YY step . args)
- (let ([tab (list '() '())])
-  ((λ (x)                   ; ω combinator
-    (let ([r (x x)])        ; thunk
-     (if [null? args]
-	 r                  ; if no args
-	 (apply r args))    ; args given
-     ))   
-   (λ (g) (λ (Lin Lout . data) ; self => varargs
-     (cond ([found Lin tab 0]
-	    => [uncurry (λ (_ Lout' . data')
-			(pp 'bar)
-			(all
-			   (== Lout Lout')
-			   (== data data')))])
-	   ([found Lout tab 1]
-	    => [uncurry (λ (_ Lin' . data')
-			(pp 'baz)
-			(all
-			   (== Lin Lin')
-			   (== data data')))])
-      (else (let ([_ (apply step (g g) Lin Lout data)])
-       (project (Lin)
-	  (list-set! tab 0 `((,Lin ,Lout . ,data) . ,(list-ref tab 0)))
-	  )
-       (project (Lout)
-	  (list-set! tab 1 `((,Lout ,Lin . ,data) . ,(list-ref tab 1)))
-	  )
-       _)))
-     ))
-   )))
-
-(pcg test
- ([] <=> do[(begin (write 'zap!) #s)]
-      'x)
-)
-(def mtest [memo test])
-;(def mtest test)
-
-(let-syntax ([mtest mtest])
-(pcg foo
- ([] <=> [mtest])
- ([] <=> [mtest] 'and [mtest])
- ([] <=> [mtest] 'and [mtest] 'and [mtest])
-))
-
-; left-factoring
-;(dcg baz ([_] <=> epsilon) ([_] <=> 'and [test]))
-;(dcg quux ([_] <=> epsilon) ([_] <=> ('and [test] [baz])))
-;(dcg bar'([_] <=> [test] [quux]))
-;(mtest reset: 0)
-;(mtest reset: 1)
-
-(pcg bar
- ([] <=> [test] ((: 'and [test] ((: 'and [test]) / ε)) / ε))
-)
-
-(def [memo-tests]
-;(mtest count: 1)
-;(begin (define eff.1 (with-output-to-string (fn =>
-   (verify foo.1 (run* (q) (foo '(x) '())) ===> _.0)
-;   )))
-;   (verify foo-eff.1 (length (string-split eff.1 "!")) = 1)
-   (newline)
-;   )
-
-;(begin (define eff.1 (with-output-to-string (fn =>
-   (verify foo.2 (run* (q) (foo '(x and x) '())) ===> _.0)
-;   )))
-;   (verify foo-eff.1 (length (string-split eff.1 "!")) = 1)
-   (newline)
-;   )
-
-;(run* (q) (foo '(x and x) '()))
-;(mtest reset: 1)
-;(run* (q) (foo '(x and x and x) '()))
-;(begin (define eff.2 (with-output-to-string (fn =>
-   (verify foo.3 (run* (q) (foo '(x and x and x) '())) ===> _.0)
-;)))
-   ;(verify foo-eff.2 (length (string-split eff.2 "!")) = 3)
-   (newline)
-   ;)
-
-;(pp (test count:))
-
-;(begin (define eff.r (with-output-to-string (fn =>
-   ;(mtest disable:)
-   (verify foo.r (run 4 (q) (foo q '())) ---> (x) (x and x) (x and x and x))
-;)))
-   ;(verify foo-eff.r (length (string-split eff.r "!")) = 3)
-   ;(newline)
-   ;)
-;(pp (test count:))(test reset:)
-;(exit)
-;(begin (define eff.3 (with-output-to-string (fn =>
-       (verify bar (run* (q) (bar '(x) '())) ===> _.0)
-       ;)))
-       ;(verify bar-eff (length (string-split eff.3 "!")) = 1)
-       (newline)
- ;      )
-;(run* (q) (bar '(x and x) '()))
-;(begin (define eff.4 (with-output-to-string (fn =>
-   (verify bar (run* (q) (bar '(x and x and x) '())) ===> _.0)
-   ;)))
-   ;(verify bar-eff (length (string-split eff.4 "!")) = 3)
-   (newline)
- ;  )
-
-;(begin (define eff.5 (with-output-to-string (fn =>
-   (verify bar (run 4 (q) (bar q '())) ---> (x and x and x) (x) (x and x))
-   ;)))
-   ;(verify bar-eff (length (string-split eff.5 "!")) = 3)
-   (newline)
-;   )
-#false
+(verify BC (run 17 (q) (BC q '())) ---> (< c >) (< b >) (< d >) (< c c >) (< c b >) (< c d >) (< b c >) (< d c >) (< c c c >) (< b b >) (< d b >) (< c c b >) (< b d >) (< d d >) (< c c d >) (< c b c >) (< c d c >))
 )
 
 ; solving left-recursion by the "trick"
@@ -532,9 +216,9 @@
 (verify SS.prefix (run* (q) (fresh (_ r) (X '(a a a a) _ r) (== q `(,_ ,r)))) ---> ((a a a a) z) ((a a) (S z)) (() (S (S z))))
 (verify SS.fwd (run* (q) (X '(a a a a) '() q)) ===> (S (S z)))
 (verify SS.fwd (run* (q) (X '(a a a a a a) '() q)) ===> (S (S (S z))))
-(verify SS.rev (run* (q) (X q '() 'z)) ===> ())
-(verify SS.rev (run* (q) (X q '() '(S z))) ===> (a a))
-(verify SS.rev (run* (q) (X q '() '(S (S z)))) ===> (a a a a))
+(verify SS.rev0 (run* (q) (X q '() 'z)) ===> ())
+(verify SS.rev1 (run* (q) (X q '() '(S z))) ===> (a a))
+(verify SS.rev2 (run* (q) (X q '() '(S (S z)))) ===> (a a a a))
 (verify SS.fail (run* (q) (X '(a) '() q)) =>)
 (verify SS.fail (run* (q) (X '(a a a) '() q)) =>)
 (verify SS.fail (run* (q) (X '(a a a a a) '() q)) =>)
@@ -630,6 +314,7 @@
 ;(verify exprs.expr (run 1 (q) (fresh (x) (exprs q '() '(+ (* 2 a) (* x 5))))) ===> (2 * a + x * 5))
 )
 
+
 ; Correct associativity for operators,
 ; no need to do left-recursion elimination
 ; still need to do separation into sub-goals to solve precedence
@@ -668,7 +353,7 @@
 (verify Factor (run* (q) (Factor q '() '(^ (^ 3 4) 5))) ===> (3 ^ 4 ^ 5))
 (verify Factor (run* (q) (Factor q '() '(^ (^ (^ 3 4) 5) 6))) ===> (3 ^ 4 ^ 5 ^ 6))
 (verify Factor (run* (q) (Factor q '() '(^ (^ (^ (^ 3 4) 5) 6) 7))) ===> (3 ^ 4 ^ 5 ^ 6 ^ 7))
-(verify Factor (run* (q) (fresh (X) (Factor q X '(^ 3 4)))) ===> ( 3 ^ 4 . _.0))
+(verify Factor1 (run* (q) (fresh (X) (Factor q X '(^ 3 4)))) ===> ( 3 ^ 4 . _.0))
 
 (verify Factor (run* (q) (Factor q '() '(^ (^ 3 4) (^ 5 6)))) =>)
 
@@ -680,7 +365,7 @@
 (verify Term (run* (q) (fresh (x) (Term '(1 * 3 ^ 5) '() q))) ===> (* 1 (^ 3 5)))
 (verify Term (run* (q) (fresh (x) (Term '(1 ^ 3 * 5) '() q))) ===> (* (^ 1 3) 5))
 
-(verify Term (run* (q) (fresh (x) (Term q '() '(* (* 1 3) 5)))) ===> (1 * 3 * 5))
+(verify Term1 (run* (q) (fresh (x) (Term q '() '(* (* 1 3) 5)))) ===> (1 * 3 * 5))
 (verify Term (run* (q) (fresh (x) (Term q '() '(* (* (* 1 3) 5) 7)))) ===> (1 * 3 * 5 * 7))
 (verify Term (run* (q) (fresh (x) (Term q '() '(* 1 3 5)))) =>) ; should fail
 (verify Term (run* (q) (fresh (x) (Term q '() '(* 1 (* 3 5))))) =>) ; should fail
@@ -688,11 +373,11 @@
 ;(exit)
 
 (verify Term (run* (q) (fresh (x) (Term '(1 / 3 / 5) '() q))) ===> (/ (/ 1 3) 5))
-(verify Term (run* (q) (fresh (x) (Term '(1 / 3 / 5 / 7) '() q))) ===> (/ (/ (/ 1 3) 5) 7))
+(verify Term2 (run* (q) (fresh (x) (Term '(1 / 3 / 5 / 7) '() q))) ===> (/ (/ (/ 1 3) 5) 7))
 (verify Term (run* (q) (fresh (x) (Term '(1 / 3 / 5 / 7 / 9) '() q))) ===> (/ (/ (/ (/ 1 3) 5) 7) 9))
 
 (verify Term (run* (q) (fresh (x) (Term q '() '(/ 1 3 5)))) =>) ; should fail
-(verify Term (run* (q) (fresh (x) (Term q '() '(/ 1 (/ 3 5))))) =>) ; should fail
+(verify Term3 (run* (q) (fresh (x) (Term q '() '(/ 1 (/ 3 5))))) =>) ; should fail
 (verify Term (run* (q) (fresh (x) (Term q '() '(/ 1 (/ 3 (/ 5 7)))))) =>) ; should fail
 (verify Term (run* (q) (fresh (x) (Term q '() '(/ (/ 1 3) 5)))) ===> (1 / 3 / 5))
 (verify Term (run* (q) (fresh (x) (Term q '() '(/ (/ (/ 1 3) 5) 7)))) ===> (1 / 3 / 5 / 7))
@@ -717,17 +402,17 @@
 (verify Expr (run* (q) (fresh (x) (Expr '(2 ^ 2 * 1 + 3 * 5) '() q))) ===> (+ (* (^ 2 2) 1) (* 3 5)))
 
 (verify Expr (run* (q) (fresh (x) (Expr q '() '(+ 1 3)))) ===> (1 + 3))
-(verify Expr (run* (q) (fresh (x) (Expr q '() '(+ (+ 1 3) 5)))) ===> (1 + 3 + 5))
+(verify Expr1 (run* (q) (fresh (x) (Expr q '() '(+ (+ 1 3) 5)))) ===> (1 + 3 + 5))
 (verify Expr (run* (q) (fresh (x) (Expr q '() '(+ 1 (+ 3 5))))) =>)
 (verify Expr (run* (q) (fresh (x) (Expr q '() '(+ (* 2 1) (* 3 5))))) ===> (2 * 1 + 3 * 5))
 (verify Expr (run* (q) (fresh (x) (Expr q '() '(+ (* 2 a) (* x 5))))) ===> (2 * a + x * 5))
 
 (verify Expr (run* (q) (fresh (x) (Expr '(3) '() q))) ===> 3)
 
-(verify Expr (run 1 (q)
+(verify Expr (last-pair (run 6 (q)
 		(fresh (l _)
 		   (prefixº '(1 * 2 + 3 * 5) l)
-		   (Expr l _  q))) ===> (+ (* 1 2) (* 3 5)))
+		   (Expr l _  q)))) ===> (+ (* 1 2) (* 3 5)))
 )
 
 (defn ife (pcg <=> if
@@ -889,29 +574,52 @@ else a - (b - c)
 
 ;;this is the price we pay for handling bidirectionality in a nice way (run*, not run(N))
 (verify hutton'.s1 (run 10 (q) (fresh (x y) (hutton' x  '()  y) (== q `(,x ,y)))) --->
-((a + a) (+ a a)) ((a) a) ((0 + a) (+ 0 a)) ((a * a) (* a a)) ((b + a) (+ b a)) ((0) 0) ((a - a) (- a a)) ((a ^ a) (^ a a)) ((1 + a) (+ 1 a)) ((b) b)
-;((a + a) (+ a a)) ((a) a) ((0 + a) (+ 0 a)) ((a * a) (* a a)) ((b + a) (+ b a)) ((0) 0) ((a - a) (- a a)) ((1 + a) (+ 1 a)) ((a ^ a) (^ a a)) ((c + a) (+ c a))
-;((a) a) ((a + a) (+ a a)) ((a * a) (* a a)) ((0) 0) ((a ^ a) (^ a a)) ((a - a) (- a a)) ((0 + a) (+ 0 a)) ((b) b) ((b + a) (+ b a)) ((1) 1)
-;((a) a) ((a + a) (+ a a)) ((a * a) (* a a)) ((a ^ a) (^ a a)) ((0) 0) ((a - a) (- a a)) ((b) b) ((0 + a) (+ 0 a)) ((a / a) (/ a a)) ((a + a * a) (+ a (* a a)))
-;((a) a) ((a + a) (+ a a)) ((0) 0) ((a * a) (* a a)) ((b) b) ((a ^ a) (^ a a)) ((a - a) (- a a)) ((0 + a) (+ 0 a)) ((1) 1) ((b + a) (+ b a))
+(((_.0) _.0) (sym _.0))
+(((_.0) _.0) (num _.0))
+(((_.0 + _.1) (+ _.0 _.1)) (sym _.0 _.1))
+(((_.0 + _.1) (+ _.0 _.1)) (num _.0) (sym _.1))
+(((_.0 * _.1) (* _.0 _.1)) (sym _.0 _.1))
+(((_.0 * _.1) (* _.0 _.1)) (num _.0) (sym _.1))
+(((_.0 + _.1) (+ _.0 _.1)) (num _.1) (sym _.0))
+(((_.0 + _.1) (+ _.0 _.1)) (num _.0 _.1))
+(((_.0 ^ _.1) (^ _.0 _.1)) (sym _.0 _.1))
+((((_.0) + _.1) (+ (begin _.0) _.1)) (sym _.0 _.1))
+; (((_.0) _.0) (sym _.0))
+; (((_.0) _.0) (num _.0))
+; (((_.0 + _.1) (+ _.0 _.1)) (sym _.0 _.1))
+; (((_.0 + _.1) (+ _.0 _.1)) (num _.0) (sym _.1))
+; (((_.0 * _.1) (* _.0 _.1)) (sym _.0 _.1))
+; (((_.0 * _.1) (* _.0 _.1)) (num _.0) (sym _.1))
+; (((_.0 + _.1) (+ _.0 _.1)) (num _.1) (sym _.0))
+; (((_.0 + _.1) (+ _.0 _.1)) (num _.0 _.1))
+; (((_.0 ^ _.1) (^ _.0 _.1)) (sym _.0 _.1))
+; (((_.0 ^ _.1) (^ _.0 _.1)) (num _.0) (sym _.1))
 )
 
 ;;this is the price we pay for handling bidirectionality in a nice way (run*, not run(N))
 (verify hutton'.s2
-(parameterize ([*digits* '(42)] [*letters* '(#\x)])
-(run 10 (q) (fresh (x y) (hutton' x  '()  y) (== q `(,x ,y))))
-) --->
-((x + x) (+ x x)) ((x) x) ((42 + x) (+ 42 x)) ((x * x) (* x x)) ((x ^ x) (^ x x)) ((x + x * x) (+ x (* x x))) ((x - x) (- x x)) ((42) 42) ((42 + x * x) (+ 42 (* x x))) ((42 - x) (- 42 x))
-;((x + x) (+ x x)) ((x) x) ((42 + x) (+ 42 x)) ((x * x) (* x x)) ((42) 42) ((x - x) (- x x)) ((x ^ x) (^ x x)) ((x + x * x) (+ x (* x x))) ((42 - x) (- 42 x)) ((x / x) (/ x x))
-;((x + x) (+ x x)) ((x) x) ((42 + x) (+ 42 x)) ((x * x) (* x x)) ((x ^ x) (^ x x)) ((x + x * x) (+ x (* x x))) ((x - x) (- x x)) ((42) 42) ((42 + x * x) (+ 42 (* x x))) ((42 - x) (- 42 x))
-;;((x) x) ((x + x) (+ x x)) ((x * x) (* x x)) ((42) 42) ((42 + x) (+ 42 x)) ((x - x) (- x x)) ((x ^ x) (^ x x)) ((x + x * x) (+ x (* x x))) ((x / x) (/ x x)) ((42 - x) (- 42 x))
-)
-
-(cond-expand (disabled
-(parameterize ([*digits* '(42)] [*letters* '(#\x)])
-(run 40 (q) (fresh (x y) (hutton' x  '()  y) (== q `(,x ,y))))
-))(else 'takes-too-long))
-)
+(run 10 (q) (fresh (x y) (hutton' x  '()  y) (== q `(,x ,y)))) --->
+(((_.0) _.0) (sym _.0))
+(((_.0) _.0) (num _.0))
+(((_.0 + _.1) (+ _.0 _.1)) (sym _.0 _.1))
+(((_.0 + _.1) (+ _.0 _.1)) (num _.0) (sym _.1))
+(((_.0 * _.1) (* _.0 _.1)) (sym _.0 _.1))
+(((_.0 * _.1) (* _.0 _.1)) (num _.0) (sym _.1))
+(((_.0 + _.1) (+ _.0 _.1)) (num _.1) (sym _.0))
+(((_.0 + _.1) (+ _.0 _.1)) (num _.0 _.1))
+(((_.0 ^ _.1) (^ _.0 _.1)) (sym _.0 _.1))
+((((_.0) + _.1) (+ (begin _.0) _.1)) (sym _.0 _.1))
+; (((_.0) _.0) (sym _.0))
+; (((_.0) _.0) (num _.0))
+; (((_.0 + _.1) (+ _.0 _.1)) (sym _.0 _.1))
+; (((_.0 + _.1) (+ _.0 _.1)) (num _.0) (sym _.1))
+; (((_.0 * _.1) (* _.0 _.1)) (sym _.0 _.1))
+; (((_.0 * _.1) (* _.0 _.1)) (num _.0) (sym _.1))
+; (((_.0 + _.1) (+ _.0 _.1)) (num _.1) (sym _.0))
+; (((_.0 + _.1) (+ _.0 _.1)) (num _.0 _.1))
+; (((_.0 ^ _.1) (^ _.0 _.1)) (sym _.0 _.1))
+; (((_.0 ^ _.1) (^ _.0 _.1)) (num _.0) (sym _.1))
+))
 
 ; immediate infinite self-recursion
 (pcg BB ;locals: (b)
@@ -962,7 +670,9 @@ else a - (b - c)
 ;(verify gram (run* (q) (gram q '() '(S (S (C b)) (A a (C b) a) (C (C b) (A a (C b) a))))) ===> (b a b a b a b a))
 (verify gram (run 1 (q) (gram q '() '(S (S (C b)) (A a (C b) a) (C (C b) (A a (C b) a))))) ===> (b a b a b a b a))
 ;;this is the price we pay for handling bidirectionality in a nice way (run*, not run(N))
-(verify gram (run 7 (q) (fresh (x y) (gram x '() y) (== q x))) ---> (b) (b a b a b) (b a b a) (b a b a b a a b) (b a b a b a a) (b a b a b a b a) (b a b a a b a))
+(verify gram (run 7 (q) (fresh (x y) (gram x '() y) (== q x))) --->
+(b) (b a b a) (b a b a b) (b a b a b a b a) (b a b a b a a) (b a b a a b a) (b a b a b a b a b a a))
+
 
 (verify merc (run* (q) (merc '(x x x z z z) '() q)) ---> (a (c (d (a (c (d (a (c (d _.0))))))))))
 )
@@ -1106,9 +816,9 @@ else a - (b - c)
 (verify aⁿbⁿcⁿ (run* (q) (aⁿbⁿcⁿ '(a a b c c) '())) =>)
 (verify aⁿbⁿcⁿ (run* (q) (aⁿbⁿcⁿ '(a b b c c) '())) =>)
 (verify aⁿbⁿcⁿ (run* (q) (aⁿbⁿcⁿ '(a a a b b b c c c) '())) ===> _.0)
-(cond-expand (bigloo;-eval
+;(cond-expand (bigloo;-eval
 (verify aⁿbⁿcⁿ (run 3 (q) (aⁿbⁿcⁿ q '())) ---> (a b c . _.0) (a a b b c c . _.0) (a a a b b b c c c . _.0))
-)(else))
+;)(else))
 (verify aⁿbⁿaⁿ (run* (q) (aⁿbⁿaⁿ '() '())) =>)
 (verify aⁿbⁿaⁿ (run* (q) (aⁿbⁿaⁿ '(a b a) '())) ===> _.0)
 (verify aⁿbⁿaⁿ (run* (q) (aⁿbⁿaⁿ '(a a b b a a) '())) ===> _.0)
@@ -1116,10 +826,9 @@ else a - (b - c)
 (verify aⁿbⁿaⁿ (run* (q) (aⁿbⁿaⁿ '(a a b a a) '())) =>)
 (verify aⁿbⁿaⁿ (run* (q) (aⁿbⁿaⁿ '(a b b a a) '())) =>)
 (verify aⁿbⁿaⁿ (run* (q) (aⁿbⁿaⁿ '(a a a b b b a a a) '())) ===> _.0)
-(cond-expand (bigloo;-eval
+;(cond-expand (bigloo;-eval
 (verify aⁿbⁿaⁿ (run 3 (q) (aⁿbⁿaⁿ q '())) ---> (a b a . _.0) (a a b b a a . _.0) (a a a b b b a a a . _.0))
-)(else))
-
+;)(else))
 )
 
 ; higher-order rules
@@ -1201,40 +910,6 @@ else a - (b - c)
 (verify m (run* (q) (fresh (a b) (m '(x x) '() a b) (== q `(,a ,b)))) ===> ((M (M z)) (m (m z))))
 )
 
-;; A better way to inhibit collapse to FAIL
-(def Λ (pcg <=> S
-  (S locals: (m)
-     ([_ x] <=> ε ([L m x] / [A x] / [T x]))
-     ([_ x] <=> `(,[S x])))
-  (L ([_ π(λ (x) y) `(lambda (,x) ,y)] <=> 'λ [T x] '· [S y]))
-  (L' ([_ `(lambda (,x) ,y)] <=> 'λ [T x] '· [S y]))
-  (A ;([_ `(,x)] <=> '! [S x])
-     ([_ `(,x . ,y)] <=>;[(trace-vars 'Lam(x y))]=>
-		     '! [S x] ([S y] *))
-     ;([_ z] <=> '! ([S z] +))
-     ;([_ `(,x ,y)] <=> `(! ,[S x] ,[S y]))
-     )
-  (A' ([_ x] <=> `(! ,([S x] +)))
-      ([_ x] <=> '! ([S x] +)))
-  (A´´ ([_ `(,x . ,y)] <=> `(,[S x] ,[S y])))
-  (T ([_ x] <=> [symbol x]))
-  ))
-
-(def [hoas-tests]
-(verify Λ.e (run* (q) (Λ '() '() q)) =>)
-(verify Λ.t (run* (q) (Λ '(x) '() q)) ===> x)
-(verify Λ.tr (run 1 (q) (Λ q '() 'x)) ===> (x))
-(verify Λ.a1 (run* (q) (Λ '(! x) '() q)) ===> (x))
-(verify Λ.a1r (run 1 (q) (Λ q '() '(x))) ===> (! x))
-(verify Λ.a2 (run* (q) (Λ '(! x y) '() q)) ===> (x y))
-;(verify Λ.a2r (run 1 (q) (Λ q '() '(x y))) ===> (! x y))
-(verify Λ.a3 (run* (q) (Λ '(! x y z) '() q)) ===> (x y z))
-(verify Λ.a4 (run* (q) (Λ '(! x y z w) '() q)) ===> (x y z w))
-(verify Λ.na (run* (q) (Λ '(! (! x y) z ) '() q)) ===> ((x y) z))
-(verify Λ.l1 (run* (q) (Λ '(λ|x|· y) '() q)) ===> (lambda (x) y))
-(verify Λ.l2 (run* (q) (Λ '(λ|x|· ! x y) '() q)) ===> (lambda (x) (x y)))
-(verify Λ.l3 (run* (q) (Λ '(λ|x|· λ|y|· ! x y) '() q)) ===> (lambda (x) (lambda (y) (x y))))
-)
 
 (pcg	      
 (lev0
@@ -1320,29 +995,70 @@ else a - (b - c)
 ;)
 )
 
-(def [main argv]
-     (display "hello CCGs")(newline)
-     [basic-tests]
-     [expr1-tests]
-     [sugar-tests]
-     [memo-tests]
-     [left-tests]
-     [right-tests]
-     [good-tests]
-     [ife-tests]
-     [hutton-tests]
-     [ifo-tests]
-     [hutton'-tests]
-     [gram-tests]
-     [nested-tests]
-     [levels-tests]
-     [hofs-tests]
-     [proj-tests]
-     [hoas-tests]
-     [extend-tests]
+(pcg num extend: extend ([|.|] <=> ((#\0 / #\1) +)))
+;(pcg (num extend: extend ([|.|] <=> ((#\0 / #\1) +))))
+
+(def [char-tests]
+   (verify num (map list->string
+     (run* (q) (num (string->list "0102") '(#\2) q)))
+      ===> "010")
+   )
+
+;(def test (predicate
+(predicate test
+([_ `() `()])
+; ([_ `([,n . ,va] . ,ar) `([,n . ,vb] . ,br)] :-
+;  ((== va vb) /
+;   (== 'xxx vb))
+;  (test ar br))
+([_ `([,n1 . ,va] . ,ar) `([,n2 . ,vb] . ,br)] :-
+ ([(== va vb) : (== n1 n2)] /
+  [(== 'xxx vb) : (== n1 n2)])
+ (test ar br))
+; ([_ `([,n . ,va] . ,ar) `([,n . ,vb] . ,br)] :-
+;  (== 'xxx vb)
+;  (test ar br))
 )
+;)
+
+(def [pred-tests]
+   (pp (run* (q) (test '([1 . 2] [3 . 4]) q)))
+   )
+
+(pcg foo heads: (rev: symbol)
+   ([_ x] <=> ((: 'a ((: 's [symbol x]) *)) *))
+   )
+
+(pcg bar heads: (rev: symbol)
+   ([_ x] <=> (((: 's [symbol x]) *) *))
+   )
+
+(def [foo-tests]
+   (pp (run* (q) (foo '(a s x s y s z a s b s c s d) '() q)))
+   (pp (run 1 (q) (bar '(s x s y s z s b s c s d) '() q)))
+   (pp (run 0 (q) (bar q '() '(((x y z b c d))))))
+   (pp (run 0 (q) (foo q '() '(((x y z) (b c d))))))
+   )
+
 
 (cond-expand (bigloo-eval
- (main '())
-)(else))
-; the end
+	      (basic-tests)
+	      (expr1-tests)
+	      (sugar-tests)
+	      (left-tests)
+	      (right-tests)
+	      (good-tests)
+	      (ife-tests)
+	      (hutton-tests)
+	      (ifo-tests)
+	      (hutton'-tests)
+	      (gram-tests)
+	      (nested-tests)
+	      (levels-tests)
+	      (hofs-tests)
+	      (proj-tests)
+	      (extend-tests)
+	      (char-tests)
+	      (pred-tests)
+	      (foo-tests)
+	      ))

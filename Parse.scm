@@ -1,90 +1,86 @@
-; the beginning
-(module purecube
-   (library srfi1 slib minikanren)
-   (import ;brackets
-	   (helpers "helpers.scm")
-	   (loprog "loprog.sch")
-	   (ascript "cases.scm"))
-   (export *digits* *letters*
-	   number symbol literal strings
-	   skipn appendo extend)
-   (eval (export-exports)))
+(module Parse
+   (library bkanren slib)
+   (import (helpers "helpers.scm")
+	   (loprog "loprog.sch"))
+   (export number symbol strings not-strings
+	   literal skipn appendo extend
+	   idem chars= chars syms=)
+   )
 
-(load "synrules.sch")
-; some handy abbrevs
-(def-syntax ∘ compose)
-(def-syntax _ rcurry)
-(def-syntax _.x lcurry)
-(def-syntax :: cons)
 (def-syntax λ lambda)
+(def-syntax ∘ compose)
 
-(def *digits* [make-parameter
-  (list-tabulate 10 values)])
+; (def-syntax conde tconde)
+; (def-syntax == t==)
+; (def-syntax run trun)
+; (def-syntax run* trun*)
 
-(def (range start end)
-   (unfold [_ char>? end]
-     values
-     (∘ integer->char
-	[_ $+ 1]
-	char->integer)
-     start))
+; (def-syntax ≡ t==)̧
+; (defn (nullo? x) [≡ x '()])
+; (defn (pairo? x) (fresh (x0 x1) [≡ x `(,x0 . ,x1)]))
+; (defn (caro x y) (fresh (t) [≡ x `(,y . ,t)]))
+; (defn (cdro x y) (fresh (h) [≡ x `(,h . ,y)]))
+; (defn (conso h t l) (≡ l `(,h . ,t)))
 
-(def *letters* [make-parameter (range #\a #\z)])
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;(write *letters*)
-;(take-from [*digits*] x)
-
-(def [lifto pred stream]
-  (λ (x)
-   (conda ((project (x)
-      (or (and (ground? x) (pred x) #s)
-	  #u)
-      ))
-      ((take-from (force stream) x))
-      )
+(defn (number Lin Lout x)
+  (all
+   (numbero x)
+   (conso x Lout Lin)
    ))
 
-(def numbers? [lifto number? *digits*])
-; TODO maybe [[gensym]] for the reverse
-(def symbols? [lifto symbol? (λ () (map (∘ string->symbol 
-   		      list->string
-   		      list)
-   		 [*letters*]))])
-(def strings? [lifto string? (λ () (map (∘ 
-   		      list->string
-   		      list)
-   		 [*letters*]))])
+(defn (symbol Lin Lout x)
+  (all
+   (symbolo x)
+   (conso x Lout Lin)
+   ))
 
-(def (number Lin Lout x)
- (all (consᵒ x Lout Lin)
-      (numbers? x)
- ))
+(defn (not-strings Lin Lout x)
+   (conde
+      ((symbolo x) (conso x Lout Lin))
+      ((numbero x) (conso x Lout Lin))
+   ))
 
-(def (symbol Lin Lout x)
- (all (consᵒ x Lout Lin)
-      (symbols? x)
- ))
-
-(def (strings Lin Lout x)
- (all (consᵒ x Lout Lin)
-      (strings? x)
- ))
+(defn (strings Lin Lout x)
+  (all
+   (stringo x)
+   (conso x Lout Lin)
+   ))
 
 ; literal --> symbol.
 ; literal --> number.
-(def (literal Lin Lout x)
-   (conde ([symbol Lin Lout x])
-          ([number Lin Lout x])
-	  ;([strings Lin Lout x])
-	  ))
-
+(defn (literal Lin Lout x)
+   (conde
+      ([symbol Lin Lout x])
+      ([number Lin Lout x])
+      ;([strings Lin Lout x])
+      ))
 
 (def (skipn n a b)
    (if [> n 0]
        (fresh (_ c)
 	  (== a `(,_ . ,c))
-	  (skipn (-1+ n) c b))
+	  (skipn (- n 1) c b))
        (== a b)))
+
+;(def (idem Lin Lout v) (consᵒ v Lout Lin))
+(defn idem (curry (∘ [uncurry consᵒ] reverse)))
+(defn (swallow Lin Lout _) (== Lin Lout))
+
+(defn (chars Lin Lout sym x)
+ (all
+   (appendo (string->list (symbol->string sym)) Lout Lin)
+   (== x sym)
+   ))
+(defn (chars= Lin Lout sym)
+   (appendo (string->list (symbol->string sym)) Lout Lin)
+   )
+(defn (syms= Lin Lout sym)
+   (appendo (map (compose string->symbol string) (string->list (symbol->string sym))) Lout Lin)
+   )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (def-syntax revs (syntax-rules ()
        ([_ () () . r] r)
@@ -116,6 +112,26 @@
 	([_ k (x . xs) (y . ys) (z . zs) (w . ws) . a] (zip4 k xs ys zs ws (x y z w) . a))
 	 ))
 
+(def-syntax member?? (syntax-rules ()
+      ([_ id () kt kf] kf)
+      ([_ (id . ids) xs kt kf] kf)
+      ([_ id (x . r) kt kf]
+       (let-syntax ([test (syntax-rules (id)
+			     ([_ id t f] t)
+			     ([_ xx t f] f))])
+	  (test x kt (member?? id r kt kf))
+	  ))))
+
+;; new style
+(def-syntax [hd (k ...) a . _] (k ... a))
+(def-syntax [tl (k ...) _ . a] (k ... . a))
+(def-syntax nth (syntax-rules ()
+ ([_ k (1) . l] (hd k . l))
+ ([_ k (1 . rest) . l] (tl (nth k rest) . l))
+))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (def-syntax make-scope (syntax-rules (project)
        ([_ _ _ _] #s) ; is this really needed here? YES, for safety
        ([_ _ () head . body] (head . body))
@@ -126,15 +142,7 @@
 	))
        ([_ fresh vars _ . body] (fresh vars . body))
        ))
-(def-syntax member?? (syntax-rules ()
-      ([_ id () kt kf] kf)
-      ([_ (id . ids) xs kt kf] kf)
-      ([_ id (x . r) kt kf]
-       (let-syntax ([test (syntax-rules (id)
-			     ([_ id t f] t)
-			     ([_ xx t f] f))])
-	  (test x kt (member?? id r kt kf))
-	  ))))
+
 (def-syntax qs (syntax-rules .. (qq quote unquote quasiquote unquote-splicing) 
      ; this strips one level of quoting
      ([_ q        (k ..)   () . a]   (k .. . a))
@@ -249,6 +257,7 @@
        ))
       ;; [[*]] combinator that collects functor arguments for all [[goals]] into
       ;; lists as it iterates on the input
+      ;; does it nest? YES, it does
       ([_ in out c acc temps heads (goals ... *)]
        (seq in out c acc temps heads (goals ... * #false #false)))
       ([_ in out c acc temps heads (goals ... +)]
@@ -321,6 +330,79 @@
 	  do[(scheme-bindings (w [] (K in out) heads (goals ...)))])
        ))
       
+      ;; XXX TODO not really needed anymore: can emulate by playing with
+      ;; [[lower]] and [[upper]]... see above
+      
+      ;; [[+]] combinator that collects functor arguments for all [[goals]] into
+      ;; lists as it iterates on the input
+      ([_ in out c acc temps heads (goals ... +)]
+       (seq in out c acc temps heads (goals ... + #false #false)))
+      ([_ in out c acc temps [(r . heads) (ac ...)] (goals ... + lower upper)]
+      (let-syntax ([K (syntax-rules .. ()
+       ; we need to explicitly get the [[in]] and [[out]] from the caller
+       ([_ in out vars ..] ; 1st bunch
+	(let loop ([count 0][lin in][lout out] [vars '()] ..)
+	(let-syntax ([K (syntax-rules … ()
+	([_ res …] ; 2nd bunch
+	  (let ([res #false] …)
+	  (make-scope fresh (res …) begin
+	   (letrec-syntax ([K (syntax-rules .... ()
+	   ([_ gls (v v1 v2 v3) ....]
+	    ; and now declare the 3rd bunch of vars
+	    ; and substitute it for the original var in [[gls]]==[[goals]]
+	    (cond ([and upper (>= count upper)]
+             (all [== temp lout]
+		  (appendo v1 `(,v3) v) ....))
+	     ([and lower (< count lower)]
+	     (let ([temp #false][v3 #false] ....)
+	     (fresh (temp v3 ....)
+	      ; rename original var to a local temporary
+	      (let-syntax ([v v3] ....)
+	      (seq lin temp c () () [(r . heads) (ac ... . acc)] . gls)
+	      )
+	      (all
+		 (appendo v1 `(,v3) v2) ....
+		 [loop (+ count 1) temp lout v2 ....])
+	      )))
+	     (else (let ([temp #false][v3 #false] ....)
+	     (fresh (temp v3 ....)
+	      ; rename original var to a local temporary
+	      (let-syntax ([v v3] ....)
+	      (seq lin temp c () () [(r . heads) (ac ... . acc)] . gls)
+	      )
+	      (c ([== temp lout]
+		  (appendo v1 `(,v3) v) ....)
+		 ((appendo v1 `(,v3) v2) ....
+		  [loop (+ count 1) temp lout v2 ....])
+	      ))))
+             )))]
+	    [K1 (syntax-rules ()
+	     ([_ var gls . args]
+	      ; zip all the vars together
+	      (zip4 (K gls) var . args)
+	      ))]
+	    [K0 (syntax-rules ()
+	     ([_ . vs] ; 3rd bunch
+	      ; extract the 4rd bunch of free-vars
+	      ; now with the same colour as in [[goals]]
+	      (extract* vs (goals ...)
+		 (K1 [] (goals ...) (vars ..) (res …) vs)
+	      )))])
+	      ; retrieve the 3rd bunch of free-vars
+	      (scheme-bindings (w [] (K0) heads (goals ...)))
+	      )))
+	  )
+	)])
+	   ; retrieve the 2nd bunch of free-vars
+	   (scheme-bindings (w [] (K) heads (goals ...)))
+	)))
+       )])
+       ; retrieve the 1st bunch of free-vars
+       ; we need to pass [[in]] and [[out]] as they would
+       ; otherwise be renamed
+       (seq in out c acc temps [(r . heads) (ac ...)]
+	  do[(scheme-bindings (w [] (K in out) heads (goals ...)))])
+       ))
       ;<=: support, we know left-recursion won't hurt
       ([_ in out c () temps [(reu: . heads) ()] (lift goal . args)] (seq in out c () temps [(reu: . heads) ()] do[(goal in out . args)]))
       ;don't need to muck around with the tail-recursive call (if it is the only one, no way to avoid bottom)
@@ -533,19 +615,12 @@
        ))
       ))
 
-(def *def-extend* (λ (head) (λ (in out . results)
+(defn *def-extend* (λ (head) (λ (in out . results)
    #u
 )))
 
-(def extend [make-parameter *def-extend*])
+(defn extend [make-parameter *def-extend*])
 
-;; new style
-(def-syntax [hd (k ...) a . _] (k ... a))
-(def-syntax [tl (k ...) _ . a] (k ... . a))
-(def-syntax nth (syntax-rules ()
- ([_ k (1) . l] (hd k . l))
- ([_ k (1 . rest) . l] (tl (nth k rest) . l))
-))
 (def-syntax select (syntax-rules ()
  ([_ k () . _] k)
  ([_ (k ...) (1 . rest) a . l] (select (k ... a) rest . l))
@@ -690,18 +765,10 @@
        )
       )])
      a))
-
-(def-syntax conj1 (syntax-rules (/ :)
- ([_ c acc]                   (revs (all) acc))
- ([_ c acc (: . as) . rest]   (conj c [(conj c [] . as) . acc] . rest))
- ([_ c acc (a / . as) . rest] (conj c [(disj c [c] a / . as) . acc] . rest))
- ([_ c acc pred . rest]       (conj c [pred . acc] . rest))
-))
-
 (def-syntax disj (syntax-rules (/)
  ([_ c (acc ...)]          (acc ... #u))
- ([_ c (acc ...) a]        (acc ... [(conj c [begin] a)]))
- ([_ c (acc ...) a / . as] (disj c (acc ... [(conj c [begin] a)]) . as))
+ ([_ c (acc ...) a]        (acc ... [(conj c [all] a)]))
+ ([_ c (acc ...) a / . as] (disj c (acc ... [(conj c [all] a)]) . as))
 ))
 ;; TODO the same for (:)
 (def-syntax conj (syntax-rules (/ : -> *->)
@@ -709,24 +776,28 @@
  ([_ c (acc ...) (: . as) . rest]   (conj c (acc ... (conj c [all] . as)) . rest))
  ; XXX essential: [[then]] before [[if]] for reversibility
  ([_ c (acc ...) (if -> then) . rest] (conj c (acc ...
-				(condu ([all (conj c [begin] then) (conj c [begin] if)]))) . rest))
+				(condu ([all (conj c [all] then) (conj c [all] if)]))) . rest))
  ; XXX essential: [[then]] before [[if]] for reversibility
  ([_ c (acc ...) (if -> then / else) . rest] (conj c (acc ...
-				(condu ([all (conj c [begin] then) (conj c [begin] if)])
-				       ((conj c [begin] else))
+				(condu ([all (conj c [all] then) (conj c [all] if)])
+				       ((conj c [all] else))
 				   )) . rest))
  ; XXX essential: [[then]] before [[if]] for reversibility
  ([_ c (acc ...) (if *-> then) . rest] (conj c (acc ...
-				(conda ([all (conj c [begin] then) (conj c [begin] if)]))) . rest))
+				(conda ([all (conj c [all] then) (conj c [all] if)]))) . rest))
  ; XXX essential: [[then]] before [[if]] for reversibility
  ([_ c (acc ...) (if *-> then / else) . rest] (conj c (acc ...
-				(conda ([all (conj c [begin] then) (conj c [begin] if)])
-				       ((conj c [begin] else))
+				(conda ([all (conj c [all] then) (conj c [all] if)])
+				       ((conj c [all] else))
 				   )) . rest))
- ([_ c (acc ...) (a / . as) . rest] (conj c (acc ... (disj c (c) a / . as)) . rest))
- ([_ c (acc ...) pred . rest]       (conj c (acc ... pred) . rest))
+ ([_ c (acc ...) (a / . as) . rest]     (conj c (acc ... (disj c (c) a / . as)) . rest))
+ ; conjunctions, keep track of : at the end
+ ([_ c (acc ...) (a : as ... :) . rest] (conj c (acc ... a) (as ... :) . rest))
+ ([_ c (acc ...) (a :) . rest]          (conj c (acc ... a) . rest))
+ ([_ c (acc ...) (a : as ...) . rest]   (conj c (acc ... a) (as ... :) . rest))
+ ; other predicate goals
+ ([_ c (acc ...) pred . rest]           (conj c (acc ... pred) . rest))
 ))
-
 ;; TODO XXX introduce tracing via (#u)
 ;; TODO allow explicit naming of clauses via the first term
 (def-syntax predicate
@@ -734,6 +805,7 @@
 ([pred (syntax-rules .. (define begin _ fix <= <=> => :-)
  ([_ (k (define clh clb) ..) (fix head heads conde locals extend #f . foo)]
   (k (define clh clb) .. (define [head . args]
+       (with-trace 4 'head (trace-item "args=" args)
 	(let-syntax ([K (syntax-rules ()
 	; TODO XXX remove conde if only one clause (according to Oleg its needed)
 	([_ #f] (conde (#u) ((apply clh args)) ..))
@@ -741,22 +813,24 @@
 	               ((apply clh args)) ..))
 	)])
 	   (K extend)
-	))
+	)))
   ))
  ([_ (k (define clh clb) ..) (any head heads conde locals extend #f . foo)]
   (let ()
      (k (define clh clb) .. (define [head . args]	
+       (with-trace 4 'head (trace-item "args=" args)
         ;XXX no extensibility here since [[any head]] is a eigen-variable and
 	;we don't know how this [[conde]] should be extended (no [[phead]])
 	; TODO XXX remove conde if only one clause (according to Oleg its needed)
 	(conde (#u) ((apply clh args)) ..
-	)))
+	))))
      head))
  ; extensible version of the encapsulated goal, if the [[phead]] is given
  ; needed for predicates
  ([_ (k (define clh clb) ..) (any head heads conde locals extend phead . foo)]
   (let ()
      (k (define clh clb) .. (define [head . args]
+       (with-trace 4 'phead (trace-item "args=" args)
 	(let-syntax ([K (syntax-rules ()
 	; TODO XXX remove conde if only one clause (according to Oleg its needed)
 	([_ #f] (conde (#u) ((apply clh args)) ..))
@@ -764,26 +838,28 @@
 	               ((apply clh args)) ..))
 	)])
 	   (K extend)
-	)))
+	))))
      head))
  ; Horn clauses
  ([_ (begin ks ..) params ([_ . args]) . rest]
   (let-syntax ([head #false])
-  (let-syntax-rule ([K conde locals]
+  (let-syntax-rule ([K conde locals phead]
   (pred (begin ks ..
     (define head (λ vars
+      (with-trace 4 'head (trace-item "vars=" vars)
       ;[[locals]] merged with other vars in [[process-args]] now
       ;(make-scopes fresh locals begin
        (process-args conde (ks ..) args ([] []) vars locals)
-       ));)
+       )))
     ) params . rest))
-  (select (K) (0 0 0 1 1) . params)
+  (select (K) (0 0 0 1 1 0 1) . params)
   )))
  ([_ (begin ks ..) params ([_ . args] :- . body) . rest]
   (let-syntax ([head #false])
-  (let-syntax-rule ([K conde locals]
+  (let-syntax-rule ([K conde locals phead]
   (pred (begin ks ..
     (define head (λ vars
+      (with-trace 4 'head (trace-item "vars=" vars)
       ;[[locals]] merged with other vars in [[process-args]] now
       ;(make-scopes fresh locals begin
        (process-args conde (ks ..) args ([conj conde [all] . body]
@@ -791,9 +867,9 @@
 					 [])
 	  vars
 	  locals)		    
-       ));)
+       )))
     ) params . rest))
-  (select (K) (0 0 0 1 1) . params)
+  (select (K) (0 0 0 1 1 0 1) . params)
   )))
  ;; DCG rules
  ([_ (begin ks ..) params ([] <=> . body) . rest]
@@ -801,9 +877,10 @@
   (let-syntax-rule ([K heads conde locals]
   (pred (begin ks ..
     (define head (λ (Lin Lout . vars)
+      (with-trace 4 'head (trace-item (trace-bold "Lin=" Lin) ",vars=" vars (trace-bold ",Lout=" Lout))
       (make-scopes fresh locals begin
        [seq Lin Lout conde () () [heads (ks ..)] . body]
-       )))
+       ))))
     ) params . rest))
      (select (K) (0 0 1 1 1) . params)
   )))
@@ -812,10 +889,11 @@
   (let-syntax-rule ([K heads conde locals]
   (pred (begin ks ..
     (define head (λ (Lin Lout . vars)
+      (with-trace 4 'head (trace-item (trace-bold "Lin=" Lin) ",vars=" vars (trace-bold ",Lout=" Lout))
       (make-scopes fresh locals all
        [appendo vars Lout Lin]
        [seq Lin Lout conde () () [heads (ks ..)] . body]
-       )))
+       ))))
     ) params . rest))
      (select (K) (0 0 1 1 1) . params)
   )))
@@ -824,19 +902,21 @@
   (let-syntax-rule ([K heads conde locals]
   (pred (begin ks ..
     (define head (λ (Lin Lout . vars)
+      (with-trace 4 'head (trace-item (trace-bold "Lin=" Lin) ",vars=" vars (trace-bold ",Lout=" Lout))
       (make-scopes fresh (results . locals) all
 	 [appendo results Lout Lin]
 	 [== vars `(,results)]
 	 [seq Lin Lout conde () () [heads (ks ..)] . body]
-       )))
+       ))))
     ) params . rest))
      (select (K) (0 0 1 1 1) . params)
   )))
  ([_ (begin ks ..) params ([_ . args] <=> . body) . rest]
   (let-syntax ([head #false])
-  (let-syntax-rule ([K heads conde locals]
+  (let-syntax-rule ([K heads conde locals phead]
    (pred (begin ks ..
     (define head (λ (Lin Lout . vars)
+      (with-trace 4 'head (trace-item (trace-bold "Lin=" Lin) ",vars=" vars (trace-bold ",Lout=" Lout))
       ;(pp 'heads)
       ;[[locals]] merged with other vars in [[process-args]] now
       ;(make-scopes fresh locals begin
@@ -844,19 +924,20 @@
 	  ([seq Lin Lout conde () () [heads (ks ..)] . body] [])
 	  vars
 	  locals)
-       ));)
+       )))
     ) params . rest))
-     (select (K) (0 0 1 1 1) . params)
+     (select (K) (0 0 1 1 1 0 1) . params)
   )))
  ([_ (begin ks ..) params ([an arg ..] <=> . body) . rest]
   (let-syntax ([head #false])
   (let-syntax-rule ([K heads conde locals]
   (pred (begin ks ..
     (define head (λ (Lin Lout . vars)
+      (with-trace 4 'head (trace-item (trace-bold "Lin=" Lin) ",vars=" vars (trace-bold ",Lout=" Lout))
       (make-scopes fresh locals all
        [== vars `(,arg ..)]
        [seq Lin Lout conde () () [heads (ks ..)] . body]
-       )))
+       ))))
     ) params . rest))
      (select (K) (0 0 1 1 1) . params)
   )))
@@ -866,11 +947,12 @@
   (let-syntax-rule ([K heads conde locals]
   (pred (begin ks ..
     (define head (λ (Lin Lout . vars)
+      (with-trace 4 'head (trace-item (trace-bold "Lin=" Lin) ",vars=" vars (trace-bold ",Lout=" Lout))
       (make-scopes fresh locals all
        (project (Lin) (if [ground? Lin] #s (begin actions ..)))
        [seq Lin Lout conde () () [heads (ks ..)] . body]
        (project (Lin) (if [ground? Lin] (begin actions ..) #s))
-       )))
+       ))))
     ) params . rest))
      (select (K) (0 0 1 1 1) . params)
   )))
@@ -879,12 +961,13 @@
   (let-syntax-rule ([K heads conde locals]
   (pred (begin ks ..
     (define head (λ (Lin Lout . vars)
+      (with-trace 4 'head (trace-item (trace-bold "Lin=" Lin) ",vars=" vars (trace-bold ",Lout=" Lout))
       (make-scopes fresh locals all
        [appendo vars Lout Lin]
        (project (Lin) (if [ground? Lin] #s (begin actions ..)))
        [seq Lin Lout conde () () [heads (ks ..)] . body]
        (project (Lin) (if [ground? Lin] (begin actions ..) #s))
-      )))
+      ))))
     ) params . rest))
      (select (K) (0 0 1 1 1) . params)
   )))
@@ -893,13 +976,14 @@
   (let-syntax-rule ([K heads conde locals]
   (pred (begin ks ..
     (define head (λ (Lin Lout . vars)
+      (with-trace 4 'head (trace-item (trace-bold "Lin=" Lin) ",vars=" vars (trace-bold ",Lout=" Lout))
       (make-scopes fresh (results . locals) all
 	 [appendo results Lout Lin]
 	 [== vars `(,results)]
 	 (project (Lin) (if [ground? Lin] #s (begin actions ..)))
 	 [seq Lin Lout conde () () [heads (ks ..)] . body]
 	 (project (Lin) (if [ground? Lin] (begin actions ..) #s))
-       )))
+       ))))
     ) params . rest))
      (select (K) (0 0 1 1 1) . params)
    )))
@@ -908,13 +992,14 @@
   (let-syntax-rule ([K heads conde locals]
   (pred (begin ks ..
     (define head (λ (Lin Lout . vars)
+      (with-trace 4 'head (trace-item (trace-bold "Lin=" Lin) ",vars=" vars (trace-bold ",Lout=" Lout))
       ;[[locals]] merged with other vars in [[process-args]] now
       ;(make-scopes fresh locals begin
        (process-args conde (ks ..) args
 	  ([seq Lin Lout conde () () [heads (ks ..)] . body] [Lin (actions ..)])
 	  vars
 	  locals)
-       ));)
+       )))
     ) params . rest))
      (select (K) (0 0 1 1 1) . params)
   )))
@@ -923,12 +1008,13 @@
   (let-syntax-rule ([K heads conde locals]
   (pred (begin ks ..
     (define head (λ (Lin Lout . vars)
+      (with-trace 4 'head (trace-item (trace-bold "Lin=" Lin) ",vars=" vars (trace-bold ",Lout=" Lout))
       (make-scopes fresh locals all
        [== vars `(,arg ..)]
        (project (Lin) (if [ground? Lin] #s (begin actions ..)))
        [seq Lin Lout conde () () [heads (ks ..)] . body]
        (project (Lin) (if [ground? Lin] (begin actions ..) #s))
-       )))
+       ))))
     ) params . rest))
      (select (K) (0 0 1 1 1) . params)
   )))
@@ -997,9 +1083,9 @@
 
 (def-syntax pcg predicates)
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (def appendo (predicate
  ([_ `() b b])
  ([_ `(,x . ,a1) b `(,x . ,c1)] :- [appendo a1 b c1])
 ))
-
-; the end

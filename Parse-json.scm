@@ -1,33 +1,22 @@
-#! /usr/bin/env bgl
-; the beginning
-(cond-expand (bigloo-eval
-(module parse-json
-   (library srfi1 slib minikanren)
-   (import ;brackets
-	   (synrules "synrules.sch")
-	   (helpers "helpers.scm")
-	   (ascript "cases.scm")
+(module Parse-json
+   (library bkanren slib)
+   (import (helpers "helpers.scm")
 	   (loprog "loprog.sch")
-	   (purecube "purecube.scm")
-	   (hacks "hack-syntax.sch"))
-   (eval (export-exports)))
-)(else
-(module parse-json
-   (library srfi1 slib minikanren)
-   (main main)
-   )
-(load "synrules.sch")
-(load "dodger.sch")
-(load "cases.scm")
-(load "cond-expand.sch")
-(load "forall.scm")
-(load "helpers.scm")
-(load "brace-syntax.sch")
-(load "bracket-syntax.sch")
-(load "loprog.sch")
-(load "purecube.scm")
-(load "hack-syntax.sch")
-))
+	   (Parse "Parse.scm")
+	   (hacks "hack-syntax.sch")
+   ;(main main)
+   ))
+
+; (def-syntax λ lambda)
+; (def-syntax + $+)
+; (def-syntax - $-)
+; (def-syntax * $*)
+; (def-syntax / $/)
+
+; (def-syntax conde tconde)
+; (def-syntax == t==)
+; (def-syntax run trun)
+; (def-syntax run* trun*)
 
 (defn [json-ne-list elem] (pcg heads: (reu: elem)
   ([_ '()] <=> ε)
@@ -160,12 +149,12 @@
 
 (def [json-tests]
 (verify json-array0 (run* (q) (json-value
-      '#h:[];
+      '#h:[]
       '() q))
       ===> [arr]
    )
 (verify json-array1 (run* (q) (json-value
-      '#h:[true, false];
+      '#h:[true, false]
       '() q))
       ===> [arr true false]
    )
@@ -175,12 +164,12 @@
    ===> (|[| true |,| false |]|)
    )
 (verify json-object0 (run* (q) (json-value
-      '#h:{};
+      '#h:{}
       '() q))
       ===> [obj]
    )
 (verify json-object1 (run* (q) (json-value
-      '#h:{"a":"b"};
+      '#h:{"a":"b"}
       '() q))
       ===> [obj ("a" . "b")]
    )
@@ -190,7 +179,7 @@
    ===> (|{| "a" |:| "b" |}|)
    )
 (verify json-value1 (run* (q) (json-value
-      '#h:{"a":["b",2.3]};
+      '#h:{"a":["b",2.3]}
       '() q))
       ===> [obj ("a" . (arr "b" 2.3))]
    )
@@ -198,7 +187,7 @@
    ;[mjson-value reset: 0] [mjson-value reset: 1]
    ;; TODO XXX  for some strange reason memoing does not work here
    (verify json-value1.ext (run* (q) (json-value
-      '#h:{ a: ["b",2.3],c:d};
+      '#h:{ a: ["b",2.3],c:d}
       '() q))
       ===> [obj (a . (arr "b" 2.3)) (c . d)]
    )
@@ -208,13 +197,6 @@
       ===> (|{| a |:| |[| "b" |,| 2.3 |]| |}|)
    ))
 )
-
-(def (idem Lin Lout v) (consᵒ v Lout Lin))
-(def (chars Lin Lout sym x)
- (all
-   (appendo (string->list (symbol->string sym)) Lout Lin)
-   (== x sym)
-   ))
 
 ; low-level non-terminals
 (pcg
@@ -369,11 +351,11 @@
  ([_ e `(,h . ,t) `(,h . ,r)] :- [inserto e t r])
 ))
 
-(def membero (predicate
+(def memberᵒ (predicate
  ([_ e `()] :- #u)
  ;([_ e `(,e . ,t)])
  ;([_ e `(,h . ,t)] :- ([== e h] / (: [! == e h] [membero e t])))
- ([_ e `(,h . ,t)] :- ([== e h] / [membero e t]))
+ ([_ e `(,h . ,t)] :- ([== e h] / [memberᵒ e t]))
 ))
 
 (def extendo' (predicate ;condo: condu
@@ -415,22 +397,22 @@
    (verify extendo (run* (r) (extendo 'x '(1 x 2 3) r)) ---> (1 x 2 3))
 )
 
-(defn gamma' (predicate ;condo: condu
+(defn sigma' (predicate ;condo: condu
  ([_ t `(Union . ,ts) `(Union . ,ts)] :- [membero t ts])
  ([_ t `(Union . ,ts') `(Union . ,ts)] :- [! membero t ts'] [inserto t ts' ts])
  ([_ t t' t'] :- [== t t'])
  ([_ t t' `(Union . ,ts)] :- [! == t t'] [inserto t `(,t') ts])
 ))
 
-(defn gamma (predicate locals: (ts')
+(defn sigma (predicate locals: (ts')
  ([_ t `(Union . ,ts') `(Union . ,ts)] :- ([membero t ts'] *-> [== ts' ts] / [inserto t ts' ts]))
- ([_ t t' ts] :- ([== t t'] *-> [== t' ts] / (: [! carᵒ t' 'Union] [== ts `(Union . ,ts')] [inserto t `(,t') ts'])))
+ ([_ t t' ts] :- ([== t t'] *-> [== t' ts] / ([! carᵒ t' 'Union] : [== ts `(Union . ,ts')] : [inserto t `(,t') ts'])))
 ))
 
 (defn [tjason-non-empty-list comma elem] (pcg <=> s
  (s locals: (t ts')
   ([_ `(,v) t] <=> [elem v t])
-  ([_ `(,v . ,vs) ts] <=[(gamma t ts' ts)]=>
+  ([_ `(,v . ,vs) ts] <=[(sigma t ts' ts)]=>
    ;do[(trace-vars 'foo (v vs t ts' ts))]
    [elem v t] [idem comma] [s vs ts'])
  )))
@@ -508,14 +490,22 @@
       x '() '[obj ("a" . "b")] `(Object (Pair Str Str))) (== q x))) ===> (|{| "a" |:| "b" |}|))
    
    (verify tjson-array (run 5 (q) (fresh (x y) (tjson-value
-      x '() y `(Array Bool)) (== q y))) ---> (arr) (arr true) (arr true true) (arr false) (arr false true))
+      x '() y `(Array Bool)) (== q y))) --->
+      (arr) (arr true) (arr false) (arr true true) (arr false true))
    (verify tjson-object1.enum (run* (q) (fresh (x y) (tjson-value
       x '() y `(Object (Pair Bool Num))) (== q y))) =>)
    (verify tjson-object1.enum (run 5 (q) (fresh (x y) (tjson-value
-      x '() y `(Object (Pair Str Num))) (== q y))) ---> (obj ("a" . 0)) (obj ("b" . 0)) (obj ("a" . 1)) (obj ("a" . 0) ("a" . 0)) (obj ("a" . 2)))
+      x '() y `(Object (Pair Str Num))) (== q y))) --->
+      ((obj (_.0 . _.1)) (num _.1) (str _.0))
+      ((obj (_.0 . _.1) (_.2 . _.3)) (num _.1 _.3) (str _.0 _.2))
+      ((obj (_.0 . _.1) (_.2 . _.3) (_.4 . _.5)) (num _.1 _.3 _.5) (str _.0 _.2 _.4))
+      ((obj (_.0 . _.1) (_.2 . _.3) (_.4 . _.5) (_.6 . _.7)) (num _.1 _.3 _.5 _.7) (str _.0 _.2 _.4 _.6))
+      ((obj (_.0 . _.1) (_.2 . _.3) (_.4 . _.5) (_.6 . _.7) (_.8 . _.9)) (num _.1 _.3 _.5 _.7 _.9) (str _.0 _.2 _.4 _.6 _.8))
+      )
    (verify tjson-object1.enum (run 2 (q) (fresh (x y) (tjson-value
-      x '() y `(Object (Pair Str Num))) (== q `(syntax: ,x semantics: ,y)))) ---> (syntax: (|{| "a" : 0 |}|) semantics: (obj ("a"  . 0)))
-                                                                                  (syntax: (|{| "b" : 0 |}|) semantics: (obj ("b" . 0))))
+      x '() y `(Object (Pair Str Num))) (== q `(syntax: ,x semantics: ,y)))) --->
+      ((:syntax (|{| _.0 |:| _.1 |}|) :semantics (obj (_.0 . _.1))) (num _.1) (str _.0))
+      ((:syntax (|{| _.0 |:| _.1 |,| _.2 |:| _.3 |}|) :semantics (obj (_.0 . _.1) (_.2 . _.3))) (num _.1 _.3) (str _.0 _.2)))
 
    #;(run 4 (q) (fresh (x y) (tjson-value
       x '() y `(Array Str)) (== q `(syntax: ,x semantics: ,y))))
@@ -549,11 +539,9 @@
      [ne-list-tests]
      [json-tests]
      [jason-tests]
-     [bench-tests]
+     ;[bench-tests]
      [inserto-tests]
      [tjson-tests]
  )
 
 (cond-expand [bigloo-eval (main '())](else))
-
-; the end
