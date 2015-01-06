@@ -44,77 +44,6 @@
     ([_ `(,v . ,vs)] <=> [elem v] [idem comma] [s vs])
  )))
 
-(def-syntax [memo ctor]
-   (let ([ctor' ctor]
-	 [memo '(() ())]
-	 [hits '(0 0)]
-	 [enabled #true])
-      (fn-with ([uncurry (λ (in out . args)
-	;(printf "trying ~a ~a~nmemo0:~a~nmemo1:~a~n" in out [list-ref memo 0] [list-ref memo 1])
-	(condu
-	   ;; anything in the in-cache?
-	   ((project (in)
-	       (or [and (ground? in) (cond ((assoc in [list-ref memo 0]) =>
-		      (uncurry (λ (_ o . a)
-				  ;(pp 'in)
-				  (list-set! hits 0 (+ [list-ref hits 0] 1))
-				  (all 
-				     (== out o)
-				     (== args a))
-				  ))))]
-		   #u)))
-	   ;; anything in the out-cache?
-	   ((project (out)
-	       (or [and (ground? out) (cond ((assoc out [list-ref memo 1]) =>
-		      (uncurry (λ (_ i . a)
-				  ;(pp 'out)
-				  (list-set! hits 1 (+ [list-ref hits 1] 1))
-				  (all
-				     (== in i)
-				     (== args a))
-				  ))))]
-		   #u)))
-	   ;; goal succeeds, record the outputs
-	   ([apply ctor' in out args]
-	    (project (in out args)
-	       (or (when [and enabled (ground? in)]; (ground? out) (ground? args)]
-		   ;(printf "saved-in ~a ~a ~a ~n" in out args)
-		   (list-set! memo 0
-		     (:: (:: in (:: out args))
-			 (list-ref memo 0)))
-		   #s) #s))
-	    (project (out in args)
-	       (or (when [and enabled (ground? out)]; (ground? in) (ground? args)]
-		  ;(printf "saved-out ~a ~a ~a ~n" out in args)
-		   (list-set! memo 1
-		     (:: (:: out (:: in args))
-			 (list-ref memo 1)))
-		   #s) #s)
-	       ))
-	   ;; goal failed - record this. since [[args]] are always lists
-	   ;; unification of [[args]] with #f will always fail
-	   ((project (in out args)
-	       (or (when [and enabled (ground? in)]
-		   (list-set! memo 0
-		      (:: (:: in (:: out #f))
-			  (list-ref memo 0)))
-		   #s) #s)
-	       (or (when [and enabled (ground? out)]
-		   (list-set! memo 1
-		     (:: (:: out (:: in #f))
-			 (list-ref memo 1)))
-		   #s) #s)
-	       #u))
-	   ))])
-       || table: x => (list-ref memo x)
-       || count: x => (length (list-ref memo x))
-       || hits: x => (list-ref hits x)
-       || reset: x => (list-set! memo x '()) (list-set! hits x 0)
-       || disable: => (set! enabled #false)
-       || enable: => (set! enabled #true)
-       || ctor: => ctor'
-)))
-
 ; needs to be external since its needed for extensibility
 (pcg (json-bool ([_] <=> (true / false))))
 
@@ -185,7 +114,6 @@
    )
 (parameterize ([extend json-ext])
    ;[mjson-value reset: 0] [mjson-value reset: 1]
-   ;; TODO XXX  for some strange reason memoing does not work here
    (verify json-value1.ext (run* (q) (json-value
       '#h:{ a: ["b",2.3],c:d}
       '() q))
